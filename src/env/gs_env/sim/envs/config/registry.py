@@ -122,7 +122,7 @@ EnvArgsRegistry["g1_walk"] = WalkingEnvArgs(
     obs_scales={
         "dof_vel": 0.1,
         "base_ang_vel": 0.5,
-        "feet_contact_force": 0.001,
+        "foot_contact_force": 0.001,
     },
     obs_noises={
         "dof_pos": 0.01,
@@ -147,7 +147,7 @@ EnvArgsRegistry["g1_walk"] = WalkingEnvArgs(
         "base_ang_vel",
         "commands",
         "feet_height",
-        "feet_contact_force",
+        "foot_contact_force",
     ],
     terminate_after_collision_on=[
         "pelvis",
@@ -192,7 +192,7 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
         "TrackingLinkQuatReward": 1.0,
         "TrackingLinkLinVelReward": 1.0,
         "TrackingLinkAngVelReward": 0.05,
-        "FootContactForceReward": 1e-4,
+        "TrackingFootContactReward": 1.0,
         ### Regularization ###
         "TorquePenalty": 0.0001,
         "ActionRatePenalty": 0.3,
@@ -211,7 +211,7 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
     obs_scales={
         "dof_vel": 0.1,
         "diff_dof_vel": 0.1,
-        "feet_contact_force": 0.001,
+        "foot_contact_force": 0.001,
     },
     obs_noises={
         # "dof_pos": 0.01,
@@ -250,7 +250,7 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
         "dr_obs",
         "base_lin_vel_local",
         "tracking_link_pos_local_yaw",
-        "feet_contact_force",
+        "foot_contact_force",
     ],
     critic_obs_terms=[
         "last_action",
@@ -279,7 +279,7 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
         "dr_obs",
         "base_lin_vel_local",
         "tracking_link_pos_local_yaw",
-        "feet_contact_force",
+        "foot_contact_force",
     ],
     reset_yaw_range=(-0.15, 0.15),
     terminate_after_collision_on=[
@@ -383,7 +383,7 @@ EnvArgsRegistry["g1_motion"] = MotionEnvArgs(
     obs_scales={
         "dof_vel": 0.1,
         "diff_dof_vel": 0.1,
-        "feet_contact_force": 0.001,
+        "foot_contact_force": 0.001,
     },
     obs_noises={
         # "dof_pos": 0.01,
@@ -434,7 +434,7 @@ EnvArgsRegistry["g1_motion"] = MotionEnvArgs(
         "dr_obs",
         "base_lin_vel_local",
         "tracking_link_pos_local_yaw",
-        "feet_contact_force",
+        "foot_contact_force",
     ],
     reset_yaw_range=(-0.15, 0.15),
     terminate_after_collision_on=[

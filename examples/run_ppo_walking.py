@@ -344,7 +344,7 @@ def evaluate_policy(
 
             # Step environment
             obs, reward, terminated, truncated, _ = wrapped_env.step(action)
-            # print(wrapped_env.env.feet_contact_force[0].cpu().numpy())
+            # print(wrapped_env.env.foot_contact_force[0].cpu().numpy())
 
             # Accumulate reward
             total_reward += reward.item()

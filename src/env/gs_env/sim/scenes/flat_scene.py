@@ -41,6 +41,7 @@ class FlatScene(BaseSimScene):
             show_viewer=show_viewer,
             # renderer=_renderer,
         )
+        self._gravity = abs(self._scene.gravity[2].item())
         #
         self._plane = self._scene.add_entity(
             gs.morphs.Plane(normal=args.normal),
@@ -64,6 +65,10 @@ class FlatScene(BaseSimScene):
     def scene(self) -> gs.Scene:
         """Returns the underlying genesis scene."""
         return self._scene
+
+    @property
+    def gravity(self) -> float:
+        return self._gravity
 
     @property
     def env_spacing(self) -> tuple[float, float]:

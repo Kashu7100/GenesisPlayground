@@ -34,6 +34,10 @@ class MotionLib:
         self._target_fps = target_fps
         self._tracking_link_names = tracking_link_names
         self._motion_obs_steps = None
+        foot_contac_weights = torch.tensor(
+            [225 - (i - 15) ** 2 for i in range(31)], dtype=torch.float, device=self._device
+        )
+        self._foot_contac_weights = foot_contac_weights / foot_contac_weights.sum()
         if motion_file is not None:
             self._load_motions(motion_file)
 
@@ -62,6 +66,7 @@ class MotionLib:
         motion_link_lin_vel = []
         motion_link_ang_vel = []
         motion_foot_contact = []
+        motion_foot_contact_weighted = []
 
         full_motion_files, full_motion_weights = self._fetch_motion_files(motion_file)
         num_motion_files = len(full_motion_files)
@@ -71,196 +76,196 @@ class MotionLib:
             try:
                 with open(curr_file, "rb") as f:
                     motion_data = pickle.load(f)
-
-                    if len(self._link_names) == 0:
-                        self._link_names = motion_data["link_names"]
-                        self._dof_names = motion_data["dof_names"]
-                        self._foot_link_indices = motion_data["foot_link_indices"]
-
-                        # Filter to tracking links if specified
-                        if self._tracking_link_names is not None:
-                            # Find indices of tracking links in the full link_names list
-                            tracking_link_indices = []
-                            for name in self._tracking_link_names:
-                                if name in self._link_names:
-                                    tracking_link_indices.append(self._link_names.index(name))
-                                else:
-                                    raise ValueError(
-                                        f"Tracking link name '{name}' not found in motion data link names"
-                                    )
-                            # Store the tracking link indices for filtering
-                            self._tracking_link_indices = tracking_link_indices
-
-                    base_pos = torch.tensor(
-                        motion_data["pos"], dtype=torch.float, device=self._device
-                    )
-                    base_quat = torch.tensor(
-                        motion_data["quat"], dtype=torch.float, device=self._device
-                    )
-
-                    fps = motion_data["fps"]
-                    dt = 1.0 / fps
-                    num_frames = base_pos.shape[0]
-                    length = dt * (num_frames - 1)
-
-                    base_lin_vel = torch.zeros_like(base_pos)
-                    base_lin_vel[:-1, :] = fps * (base_pos[1:, :] - base_pos[:-1, :])
-                    base_lin_vel[-1, :] = base_lin_vel[-2, :]
-                    base_lin_vel = self.smooth(base_lin_vel, 19, device=self._device)
-
-                    base_ang_vel = torch.zeros_like(base_pos)  # (num_frames, 3)
-                    base_dquat = quat_diff(base_quat[:-1], base_quat[1:])
-                    base_ang_vel[:-1, :] = fps * quat_to_angle_axis(base_dquat)
-                    base_ang_vel[-1, :] = base_ang_vel[-2, :]
-                    base_ang_vel = self.smooth(base_ang_vel, 19, device=self._device)
-
-                    dof_pos = torch.tensor(
-                        motion_data["dof_pos"], dtype=torch.float, device=self._device
-                    )
-                    dof_vel = torch.zeros_like(dof_pos)  # (num_frames, num_dof)
-                    dof_vel[:-1, :] = fps * (dof_pos[1:, :] - dof_pos[:-1, :])
-                    dof_vel[-1, :] = dof_vel[-2, :]
-                    dof_vel = self.smooth(dof_vel, 19, device=self._device)
-
-                    link_pos_global = torch.tensor(
-                        motion_data["link_pos"], dtype=torch.float, device=self._device
-                    )
-                    link_quat_global = torch.tensor(
-                        motion_data["link_quat"], dtype=torch.float, device=self._device
-                    )
-
-                    # Filter to tracking links if specified
-                    if self._tracking_link_indices is not None:
-                        link_pos_global = link_pos_global[:, self._tracking_link_indices, :]
-                        link_quat_global = link_quat_global[:, self._tracking_link_indices, :]
-
-                    foot_contact = torch.tensor(
-                        motion_data["foot_contact"], dtype=torch.float, device=self._device
-                    )
-
-                    # Resample to target FPS if requested
-                    target_fps_curr = float(self._target_fps)
-
-                    if abs(target_fps_curr - fps) > 1e-6:
-                        # time length stays the same
-                        new_num_frames = int(round(length * target_fps_curr)) + 1
-                        t = torch.linspace(0.0, length, steps=new_num_frames, device=self._device)
-                        # compute blend weights against original frames
-                        phase = torch.clip(t / length, 0.0, 1.0)
-                        idx0 = (phase * (num_frames - 1)).long()
-                        idx1 = torch.min(
-                            idx0 + 1, torch.tensor(num_frames - 1, device=self._device)
-                        )
-                        blend = phase * (num_frames - 1) - idx0.float()
-                        blend_u = blend.unsqueeze(-1)
-
-                        # positions, dof: linear
-                        base_pos = (1.0 - blend_u) * base_pos[idx0] + blend_u * base_pos[idx1]
-                        dof_pos = (1.0 - blend_u) * dof_pos[idx0] + blend_u * dof_pos[idx1]
-                        foot_contact = 1 - (1 - foot_contact[idx0]) * (1 - foot_contact[idx1])
-                        link_pos_global = (1.0 - blend_u.unsqueeze(1)) * link_pos_global[
-                            idx0
-                        ] + blend_u.unsqueeze(1) * link_pos_global[idx1]
-
-                        # quaternions: slerp
-                        base_quat = slerp(base_quat[idx0], base_quat[idx1], blend)
-                        link_quat_global = slerp(
-                            link_quat_global[idx0],
-                            link_quat_global[idx1],
-                            blend[:, None].repeat(1, link_quat_global.shape[1]),
-                        )
-
-                        # update meta based on resampled length
-                        fps = target_fps_curr
-                        dt = 1.0 / fps
-                        num_frames = base_pos.shape[0]
-                        length = dt * (num_frames - 1)
-                    else:
-                        # ensure library fps is set
-                        fps = target_fps_curr
-                        dt = 1.0 / fps
-
-                    # recompute velocities at current fps
-                    base_lin_vel = torch.zeros_like(base_pos)
-                    base_lin_vel[:-1, :] = fps * (base_pos[1:, :] - base_pos[:-1, :])
-                    base_lin_vel[-1, :] = base_lin_vel[-2, :]
-                    base_lin_vel = self.smooth(base_lin_vel, 19, device=self._device)
-
-                    base_ang_vel = torch.zeros_like(base_pos)  # (num_frames, 3)
-                    base_dquat = quat_diff(base_quat[:-1], base_quat[1:])
-                    base_ang_vel[:-1, :] = fps * quat_to_angle_axis(base_dquat)
-                    base_ang_vel[-1, :] = base_ang_vel[-2, :]
-                    base_ang_vel = self.smooth(base_ang_vel, 19, device=self._device)
-
-                    base_ang_vel_local = quat_apply(quat_inv(base_quat), base_ang_vel)
-
-                    dof_vel = torch.zeros_like(dof_pos)  # (num_frames, num_dof)
-                    dof_vel[:-1, :] = fps * (dof_pos[1:, :] - dof_pos[:-1, :])
-                    dof_vel[-1, :] = dof_vel[-2, :]
-                    dof_vel = self.smooth(dof_vel, 19, device=self._device)
-
-                    # recompute local link transforms with yaw-only removal from base
-                    relative_link_pos_global = link_pos_global.clone()
-                    relative_link_pos_global[:, :, :2] -= base_pos[:, None, :2]
-                    base_euler = quat_to_euler(base_quat)
-                    base_euler[:, :2] = 0.0
-                    batched_inv_quat_yaw = quat_from_euler(
-                        -base_euler[:, None, :].repeat(1, link_pos_global.shape[1], 1)
-                    )
-                    link_pos_local = quat_apply(batched_inv_quat_yaw, relative_link_pos_global)
-                    link_quat_local = quat_mul(batched_inv_quat_yaw, link_quat_global)
-
-                    # compute link velocities (global)
-                    link_lin_vel = torch.zeros_like(link_pos_global)  # (num_frames, num_links, 3)
-                    link_lin_vel[:-1, :, :] = fps * (
-                        link_pos_global[1:, :, :] - link_pos_global[:-1, :, :]
-                    )
-                    link_lin_vel[-1, :, :] = link_lin_vel[-2, :, :]
-                    # Smooth each link separately across frames
-                    link_lin_vel_flat = link_lin_vel.reshape(
-                        link_lin_vel.shape[0], -1
-                    )  # (num_frames, num_links * 3)
-                    link_lin_vel_flat = self.smooth(link_lin_vel_flat, 19, device=self._device)
-                    link_lin_vel = link_lin_vel_flat.reshape(link_pos_global.shape)
-
-                    link_ang_vel = torch.zeros_like(link_pos_global)  # (num_frames, num_links, 3)
-                    link_dquat_global = quat_diff(
-                        link_quat_global[:-1], link_quat_global[1:]
-                    )  # (num_frames-1, num_links, 4)
-                    link_ang_vel[:-1, :, :] = fps * quat_to_angle_axis(link_dquat_global)
-                    link_ang_vel[-1, :, :] = link_ang_vel[-2, :, :]
-                    # Smooth each link separately across frames
-                    link_ang_vel_flat = link_ang_vel.reshape(
-                        link_ang_vel.shape[0], -1
-                    )  # (num_frames, num_links * 3)
-                    link_ang_vel_flat = self.smooth(link_ang_vel_flat, 19, device=self._device)
-                    link_ang_vel = link_ang_vel_flat.reshape(link_pos_global.shape)
-
-                    self._motion_names.append(os.path.basename(curr_file))
-                    self._motion_files.append(curr_file)
-
-                    motion_weights.append(full_motion_weights[i])
-                    motion_num_frames.append(num_frames)
-                    motion_lengths.append(length)
-
-                    motion_base_pos.append(base_pos)
-                    motion_base_quat.append(base_quat)
-                    motion_base_lin_vel.append(base_lin_vel)
-                    motion_base_ang_vel.append(base_ang_vel)
-                    motion_base_ang_vel_local.append(base_ang_vel_local)
-                    motion_dof_pos.append(dof_pos)
-                    motion_dof_vel.append(dof_vel)
-                    motion_link_pos_global.append(link_pos_global)
-                    motion_link_quat_global.append(link_quat_global)
-                    motion_link_pos_local.append(link_pos_local)
-                    motion_link_quat_local.append(link_quat_local)
-                    motion_link_lin_vel.append(link_lin_vel)
-                    motion_link_ang_vel.append(link_ang_vel)
-                    motion_foot_contact.append(foot_contact)
-
             except Exception as e:
                 print(f"Error loading motion file {curr_file}: {e}")
                 continue
+
+            if len(self._link_names) == 0:
+                self._link_names = motion_data["link_names"]
+                self._dof_names = motion_data["dof_names"]
+                self._foot_link_indices = motion_data["foot_link_indices"]
+
+                # Filter to tracking links if specified
+                if self._tracking_link_names is not None:
+                    # Find indices of tracking links in the full link_names list
+                    tracking_link_indices = []
+                    for name in self._tracking_link_names:
+                        if name in self._link_names:
+                            tracking_link_indices.append(self._link_names.index(name))
+                        else:
+                            raise ValueError(
+                                f"Tracking link name '{name}' not found in motion data link names"
+                            )
+                    # Store the tracking link indices for filtering
+                    self._tracking_link_indices = tracking_link_indices
+
+            base_pos = torch.tensor(motion_data["pos"], dtype=torch.float, device=self._device)
+            base_quat = torch.tensor(motion_data["quat"], dtype=torch.float, device=self._device)
+
+            fps = motion_data["fps"]
+            dt = 1.0 / fps
+            num_frames = base_pos.shape[0]
+            length = dt * (num_frames - 1)
+
+            base_lin_vel = torch.zeros_like(base_pos)
+            base_lin_vel[:-1, :] = fps * (base_pos[1:, :] - base_pos[:-1, :])
+            base_lin_vel[-1, :] = base_lin_vel[-2, :]
+            base_lin_vel = self.smooth(base_lin_vel, 19, device=self._device)
+
+            base_ang_vel = torch.zeros_like(base_pos)  # (num_frames, 3)
+            base_dquat = quat_diff(base_quat[:-1], base_quat[1:])
+            base_ang_vel[:-1, :] = fps * quat_to_angle_axis(base_dquat)
+            base_ang_vel[-1, :] = base_ang_vel[-2, :]
+            base_ang_vel = self.smooth(base_ang_vel, 19, device=self._device)
+
+            dof_pos = torch.tensor(motion_data["dof_pos"], dtype=torch.float, device=self._device)
+            dof_vel = torch.zeros_like(dof_pos)  # (num_frames, num_dof)
+            dof_vel[:-1, :] = fps * (dof_pos[1:, :] - dof_pos[:-1, :])
+            dof_vel[-1, :] = dof_vel[-2, :]
+            dof_vel = self.smooth(dof_vel, 19, device=self._device)
+
+            link_pos_global = torch.tensor(
+                motion_data["link_pos"], dtype=torch.float, device=self._device
+            )
+            link_quat_global = torch.tensor(
+                motion_data["link_quat"], dtype=torch.float, device=self._device
+            )
+
+            # Filter to tracking links if specified
+            if self._tracking_link_indices is not None:
+                link_pos_global = link_pos_global[:, self._tracking_link_indices, :]
+                link_quat_global = link_quat_global[:, self._tracking_link_indices, :]
+
+            foot_contact = torch.tensor(
+                motion_data["foot_contact"], dtype=torch.float, device=self._device
+            )
+
+            # Resample to target FPS if requested
+            target_fps_curr = float(self._target_fps)
+
+            if abs(target_fps_curr - fps) > 1e-6:
+                # time length stays the same
+                new_num_frames = int(round(length * target_fps_curr)) + 1
+                t = torch.linspace(0.0, length, steps=new_num_frames, device=self._device)
+                # compute blend weights against original frames
+                phase = torch.clip(t / length, 0.0, 1.0)
+                idx0 = (phase * (num_frames - 1)).long()
+                idx1 = torch.min(idx0 + 1, torch.tensor(num_frames - 1, device=self._device))
+                blend = phase * (num_frames - 1) - idx0.float()
+                blend_u = blend.unsqueeze(-1)
+
+                # positions, dof: linear
+                base_pos = (1.0 - blend_u) * base_pos[idx0] + blend_u * base_pos[idx1]
+                dof_pos = (1.0 - blend_u) * dof_pos[idx0] + blend_u * dof_pos[idx1]
+                foot_contact = 1 - (1 - foot_contact[idx0]) * (1 - foot_contact[idx1])
+                link_pos_global = (1.0 - blend_u.unsqueeze(1)) * link_pos_global[
+                    idx0
+                ] + blend_u.unsqueeze(1) * link_pos_global[idx1]
+
+                # quaternions: slerp
+                base_quat = slerp(base_quat[idx0], base_quat[idx1], blend)
+                link_quat_global = slerp(
+                    link_quat_global[idx0],
+                    link_quat_global[idx1],
+                    blend[:, None].repeat(1, link_quat_global.shape[1]),
+                )
+
+                # update meta based on resampled length
+                fps = target_fps_curr
+                dt = 1.0 / fps
+                num_frames = base_pos.shape[0]
+                length = dt * (num_frames - 1)
+            else:
+                # ensure library fps is set
+                fps = target_fps_curr
+                dt = 1.0 / fps
+
+            # recompute velocities at current fps
+            base_lin_vel = torch.zeros_like(base_pos)
+            base_lin_vel[:-1, :] = fps * (base_pos[1:, :] - base_pos[:-1, :])
+            base_lin_vel[-1, :] = base_lin_vel[-2, :]
+            base_lin_vel = self.smooth(base_lin_vel, 19, device=self._device)
+
+            base_ang_vel = torch.zeros_like(base_pos)  # (num_frames, 3)
+            base_dquat = quat_diff(base_quat[:-1], base_quat[1:])
+            base_ang_vel[:-1, :] = fps * quat_to_angle_axis(base_dquat)
+            base_ang_vel[-1, :] = base_ang_vel[-2, :]
+            base_ang_vel = self.smooth(base_ang_vel, 19, device=self._device)
+
+            base_ang_vel_local = quat_apply(quat_inv(base_quat), base_ang_vel)
+
+            dof_vel = torch.zeros_like(dof_pos)  # (num_frames, num_dof)
+            dof_vel[:-1, :] = fps * (dof_pos[1:, :] - dof_pos[:-1, :])
+            dof_vel[-1, :] = dof_vel[-2, :]
+            dof_vel = self.smooth(dof_vel, 19, device=self._device)
+
+            # recompute local link transforms with yaw-only removal from base
+            relative_link_pos_global = link_pos_global.clone()
+            relative_link_pos_global[:, :, :2] -= base_pos[:, None, :2]
+            base_euler = quat_to_euler(base_quat)
+            base_euler[:, :2] = 0.0
+            batched_inv_quat_yaw = quat_from_euler(
+                -base_euler[:, None, :].repeat(1, link_pos_global.shape[1], 1)
+            )
+            link_pos_local = quat_apply(batched_inv_quat_yaw, relative_link_pos_global)
+            link_quat_local = quat_mul(batched_inv_quat_yaw, link_quat_global)
+
+            # compute link velocities (global)
+            link_lin_vel = torch.zeros_like(link_pos_global)  # (num_frames, num_links, 3)
+            link_lin_vel[:-1, :, :] = fps * (link_pos_global[1:, :, :] - link_pos_global[:-1, :, :])
+            link_lin_vel[-1, :, :] = link_lin_vel[-2, :, :]
+            # Smooth each link separately across frames
+            link_lin_vel_flat = link_lin_vel.reshape(
+                link_lin_vel.shape[0], -1
+            )  # (num_frames, num_links * 3)
+            link_lin_vel_flat = self.smooth(link_lin_vel_flat, 19, device=self._device)
+            link_lin_vel = link_lin_vel_flat.reshape(link_pos_global.shape)
+
+            link_ang_vel = torch.zeros_like(link_pos_global)  # (num_frames, num_links, 3)
+            link_dquat_global = quat_diff(
+                link_quat_global[:-1], link_quat_global[1:]
+            )  # (num_frames-1, num_links, 4)
+            link_ang_vel[:-1, :, :] = fps * quat_to_angle_axis(link_dquat_global)
+            link_ang_vel[-1, :, :] = link_ang_vel[-2, :, :]
+            # Smooth each link separately across frames
+            link_ang_vel_flat = link_ang_vel.reshape(
+                link_ang_vel.shape[0], -1
+            )  # (num_frames, num_links * 3)
+            link_ang_vel_flat = self.smooth(link_ang_vel_flat, 19, device=self._device)
+            link_ang_vel = link_ang_vel_flat.reshape(link_pos_global.shape)
+
+            contact_clip_threshold = 0.6
+            foot_contact_clipped = (foot_contact > contact_clip_threshold).float()
+            foot_contact_sum = foot_contact_clipped.sum(dim=-1)  # (num_frames,)=
+            windowed_sum = torch.nn.functional.conv1d(
+                foot_contact_sum.view(1, 1, -1),
+                self._foot_contac_weights.view(1, 1, -1),
+                padding="same",
+            )[0, 0, :]
+            foot_contact_weighted = foot_contact_clipped / (windowed_sum[:, None] + 1e-8)
+
+            self._motion_names.append(os.path.basename(curr_file))
+            self._motion_files.append(curr_file)
+
+            motion_weights.append(full_motion_weights[i])
+            motion_num_frames.append(num_frames)
+            motion_lengths.append(length)
+
+            motion_base_pos.append(base_pos)
+            motion_base_quat.append(base_quat)
+            motion_base_lin_vel.append(base_lin_vel)
+            motion_base_ang_vel.append(base_ang_vel)
+            motion_base_ang_vel_local.append(base_ang_vel_local)
+            motion_dof_pos.append(dof_pos)
+            motion_dof_vel.append(dof_vel)
+            motion_link_pos_global.append(link_pos_global)
+            motion_link_quat_global.append(link_quat_global)
+            motion_link_pos_local.append(link_pos_local)
+            motion_link_quat_local.append(link_quat_local)
+            motion_link_lin_vel.append(link_lin_vel)
+            motion_link_ang_vel.append(link_ang_vel)
+            motion_foot_contact.append(foot_contact)
+            motion_foot_contact_weighted.append(foot_contact_weighted)
 
         assert len(self._link_names) > 0, "Link names list is empty"
         assert len(self._dof_names) > 0, "Dof names list is empty"
@@ -286,6 +291,7 @@ class MotionLib:
         self._motion_link_lin_vel = torch.cat(motion_link_lin_vel, dim=0)
         self._motion_link_ang_vel = torch.cat(motion_link_ang_vel, dim=0)
         self._motion_foot_contact = torch.cat(motion_foot_contact, dim=0)
+        self._motion_foot_contact_weighted = torch.cat(motion_foot_contact_weighted, dim=0)
 
         lengths_shifted = self._motion_num_frames.roll(1)
         lengths_shifted[0] = 0
@@ -407,6 +413,7 @@ class MotionLib:
         torch.Tensor,
         torch.Tensor,
         torch.Tensor,
+        torch.Tensor,
     ]:
         assert motion_times.min() >= 0.0, "motion_times must be non-negative"
         # snap to discrete frame grid using unified fps and clamp within motion length
@@ -430,6 +437,7 @@ class MotionLib:
         link_lin_vel = self._motion_link_lin_vel[frame_idx]
         link_ang_vel = self._motion_link_ang_vel[frame_idx]
         foot_contact = self._motion_foot_contact[frame_idx]
+        foot_contact_weighted = self._motion_foot_contact_weighted[frame_idx]
 
         return (
             base_pos,
@@ -444,6 +452,7 @@ class MotionLib:
             link_lin_vel,
             link_ang_vel,
             foot_contact,
+            foot_contact_weighted,
         )
 
     def get_motion_future_obs(

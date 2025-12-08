@@ -179,13 +179,13 @@ class G1FeetContactForcePenalty(RewardTerm):
     Penalize the feet contact force.
 
     Args:
-        feet_contact_force: Feet contact force tensor of shape (B, D) where B is the batch size and D is the number of DoFs.
+        foot_contact_force: Feet contact force tensor of shape (B, D) where B is the batch size and D is the number of DoFs.
     """
 
-    required_keys = ("feet_contact_force", "commands")
+    required_keys = ("foot_contact_force", "commands")
 
-    def _compute(self, feet_contact_force: torch.Tensor, commands: torch.Tensor) -> torch.Tensor:  # type: ignore
-        contact_force_diff = 200 - feet_contact_force.max(dim=-1).values.clamp(max=200)
+    def _compute(self, foot_contact_force: torch.Tensor, commands: torch.Tensor) -> torch.Tensor:  # type: ignore
+        contact_force_diff = 200 - foot_contact_force.max(dim=-1).values.clamp(max=200)
         contact_force_diff *= torch.norm(commands, dim=1) > 0.1
         return -torch.square(contact_force_diff / 200)
 
@@ -196,19 +196,19 @@ class G1FeetSlidePenalty(RewardTerm):
 
     Args:
         feet_height: Feet height tensor of shape (B, 2) where B is the batch size.
-        feet_contact: Feet contact tensor of shape (B, 2) where B is the batch size.
+        foot_contact: Feet contact tensor of shape (B, 2) where B is the batch size.
         feet_velocity: Feet velocity tensor of shape (B, 2, 3) where B is the batch size.
     """
 
-    required_keys = ("feet_height", "feet_contact", "feet_velocity")
+    required_keys = ("feet_height", "foot_contact", "feet_velocity")
     feet_slide_height_threshold = 0.1
 
     def _compute(
-        self, feet_height: torch.Tensor, feet_contact: torch.Tensor, feet_velocity: torch.Tensor
+        self, feet_height: torch.Tensor, foot_contact: torch.Tensor, feet_velocity: torch.Tensor
     ) -> torch.Tensor:  # type: ignore
-        feet_contact_mask = feet_contact + (feet_height < self.feet_slide_height_threshold).float()
+        foot_contact_mask = foot_contact + (feet_height < self.feet_slide_height_threshold).float()
         feet_vel_xy = torch.square(feet_velocity[:, :, :2]).sum(dim=-1)
-        return -torch.sum(feet_vel_xy * feet_contact_mask, dim=-1)
+        return -torch.sum(feet_vel_xy * foot_contact_mask, dim=-1)
 
 
 class FeetOrientationPenalty(RewardTerm):
@@ -462,19 +462,41 @@ class TrackingLinkAngVelReward(RewardTerm):
         return -tracking_link_ang_vel_error
 
 
+class TrackingFootContactReward(RewardTerm):
+    """
+    Reward the tracking foot contact.
+
+    Args:
+        foot_contact_weighted: Foot contact weighted tensor of shape (B, N) where B is the batch size and N is the number of feet.
+        ref_foot_contact_weighted: Reference foot contact weighted tensor of shape (B, N) where B is the batch size and N is the number of feet.
+    """
+
+    required_keys = ("foot_contact_weighted", "ref_foot_contact_weighted")
+
+    def _compute(
+        self, foot_contact_weighted: torch.Tensor, ref_foot_contact_weighted: torch.Tensor
+    ) -> torch.Tensor:  # type: ignore
+        foot_contact_weighted_error = (
+            torch.square(foot_contact_weighted - ref_foot_contact_weighted)
+            .clamp(max=0.25)
+            .sum(dim=-1)
+        )
+        return -foot_contact_weighted_error
+
+
 class FootContactForceReward(RewardTerm):
     """
     Reward the foot contact.
 
     Args:
-        feet_contact_force: Feet contact force tensor of shape (B, N) where B is the batch size and N is the number of feet.
+        foot_contact_force: Feet contact force tensor of shape (B, N) where B is the batch size and N is the number of feet.
         ref_foot_contact: Reference foot contact tensor of shape (B, N) where B is the batch size and N is the number of feet.
     """
 
-    required_keys = ("feet_contact_force", "ref_foot_contact")
+    required_keys = ("foot_contact_force", "ref_foot_contact")
 
     def _compute(
-        self, feet_contact_force: torch.Tensor, ref_foot_contact: torch.Tensor
+        self, foot_contact_force: torch.Tensor, ref_foot_contact: torch.Tensor
     ) -> torch.Tensor:  # type: ignore
-        contact_force = feet_contact_force * (1 - ref_foot_contact) ** 2
+        contact_force = foot_contact_force * (1 - ref_foot_contact) ** 2
         return -torch.square(contact_force).sum(dim=-1)

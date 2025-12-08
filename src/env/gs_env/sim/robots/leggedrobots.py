@@ -156,6 +156,8 @@ class LeggedRobotBase(BaseGymRobot):
         self._steps_to_randomize_pds = 10
 
     def post_build_init(self, eval_mode: bool = False) -> None:
+        self._mass = self._robot.get_mass()
+
         if not eval_mode:
             self._init_domain_randomization()
 
@@ -467,6 +469,10 @@ class LeggedRobotBase(BaseGymRobot):
     @property
     def robot(self) -> RigidEntity:
         return self._robot
+
+    @property
+    def mass(self) -> float:
+        return self._mass
 
     @property
     def n_links(self) -> int:

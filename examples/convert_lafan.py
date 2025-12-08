@@ -71,7 +71,8 @@ def lafan_to_motion_data(
             if i == 0:
                 foot_last_pos = foot_pos.clone()
             foot_vel = torch.clamp(
-                torch.norm((foot_pos[..., :2] - foot_last_pos[..., :2]) / env.dt, dim=-1) - 0.15,
+                (torch.norm((foot_pos[..., :2] - foot_last_pos[..., :2]) / env.dt, dim=-1) - 0.1)
+                / 0.1,
                 0.0,
                 1.0,
             )

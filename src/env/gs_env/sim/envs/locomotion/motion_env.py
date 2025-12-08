@@ -70,12 +70,12 @@ class MotionEnv(LeggedRobotEnv):
             device=self._device,
             dtype=torch.float32,
         )
-        self.feet_contact = torch.zeros(
+        self.foot_contact = torch.zeros(
             (self.num_envs, len(self._robot.foot_links_idx)),
             device=self._device,
             dtype=torch.float32,
         )
-        self.feet_contact_force = torch.zeros(
+        self.foot_contact_force = torch.zeros(
             (self.num_envs, len(self._robot.foot_links_idx)),
             device=self._device,
             dtype=torch.float32,
@@ -86,6 +86,11 @@ class MotionEnv(LeggedRobotEnv):
             dtype=torch.float32,
         )
         self.feet_air_time = torch.zeros(
+            (self.num_envs, len(self._robot.foot_links_idx)),
+            device=self._device,
+            dtype=torch.float32,
+        )
+        self.foot_contact_weighted = torch.zeros(
             (self.num_envs, len(self._robot.foot_links_idx)),
             device=self._device,
             dtype=torch.float32,
@@ -234,6 +239,12 @@ class MotionEnv(LeggedRobotEnv):
             self.num_envs, len(self.tracking_link_idx_local), 3, device=self._device
         )
         self.ref_foot_contact = torch.zeros(
+            self.num_envs, len(self._robot.foot_links_idx), device=self._device
+        )
+        self.ref_foot_contact_weighted = torch.zeros(
+            self.num_envs, len(self._robot.foot_links_idx), device=self._device
+        )
+        self.ref_foot_contact_force = torch.zeros(
             self.num_envs, len(self._robot.foot_links_idx), device=self._device
         )
 
@@ -428,7 +439,7 @@ class MotionEnv(LeggedRobotEnv):
         tracking_link_pos_error = torch.norm(
             self.tracking_link_pos_local_yaw - self.ref_tracking_link_pos_local_yaw, dim=-1
         ).mean(dim=-1)
-        foot_contact_force_error = (self.feet_contact_force * (1 - self.ref_foot_contact)).sum(
+        foot_contact_force_error = (self.foot_contact_force * (1 - self.ref_foot_contact)).sum(
             dim=-1
         )
 
@@ -505,7 +516,7 @@ class MotionEnv(LeggedRobotEnv):
 
     def apply_action(self, action: torch.Tensor) -> None:
         super().apply_action(action=action)
-        self.feet_first_contact[:] = (self.feet_air_time > 0.0) * self.feet_contact
+        self.feet_first_contact[:] = (self.feet_air_time > 0.0) * self.foot_contact
         self.feet_air_time += self.dt
 
     def _pre_step(self) -> None:
@@ -569,12 +580,15 @@ class MotionEnv(LeggedRobotEnv):
         # contacts
         self.feet_height[:] = self.link_positions[:, self._robot.foot_links_idx, 2]
         self.feet_velocity[:] = self.link_lin_velocities[:, self._robot.foot_links_idx]
-        self.feet_contact_force[:] = self.link_contact_forces[:, self._robot.foot_links_idx, 2]
-        self.feet_contact[:] = self.feet_contact_force > 1.0
+        self.foot_contact_force[:] = self.link_contact_forces[:, self._robot.foot_links_idx, 2]
+        self.foot_contact[:] = self.foot_contact_force > 1.0
+        self.foot_contact_weighted[:] = self.foot_contact_force / (
+            self.robot.mass * self.scene.gravity
+        )
 
     def update_history(self) -> None:
         super().update_history()
-        self.feet_air_time *= 1 - self.feet_contact
+        self.feet_air_time *= 1 - self.foot_contact
         # update reference motion after calculating rewards
         self._update_ref_motion()
 
@@ -651,6 +665,7 @@ class MotionEnv(LeggedRobotEnv):
             link_lin_vel_global,
             link_ang_vel_global,
             foot_contact,
+            foot_contact_weighted,
         ) = self._motion_lib.get_ref_motion_frame(motion_ids, motion_times)
 
         curr_motion_obs_dict, future_motion_obs_dict = self.motion_lib.get_motion_future_obs(
@@ -692,6 +707,7 @@ class MotionEnv(LeggedRobotEnv):
         self.ref_tracking_link_lin_vel_global[envs_idx] = link_lin_vel_global
         self.ref_tracking_link_ang_vel_global[envs_idx] = link_ang_vel_global
         self.ref_foot_contact[envs_idx] = foot_contact
+        self.ref_foot_contact_weighted[envs_idx] = foot_contact_weighted
 
         pos_diff = self.ref_base_pos[envs_idx] - self.base_pos[envs_idx]
         quat_yaw = quat_from_angle_axis(

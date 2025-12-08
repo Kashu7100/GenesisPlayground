@@ -278,13 +278,13 @@ class StandStillFeetContactPenalty(RewardTerm):
     Penalize the uneven feet contact force when stand still.
 
     Args:
-        feet_contact_force: Feet contact force tensor of shape (B, N) where B is the batch size and N is the number of feet.
+        foot_contact_force: Feet contact force tensor of shape (B, N) where B is the batch size and N is the number of feet.
     """
 
-    required_keys = ("feet_contact_force", "commands")
+    required_keys = ("foot_contact_force", "commands")
 
-    def _compute(self, feet_contact_force: torch.Tensor, commands: torch.Tensor) -> torch.Tensor:  # type: ignore
-        contact_force_diff = feet_contact_force - feet_contact_force.mean(dim=1, keepdim=True)
+    def _compute(self, foot_contact_force: torch.Tensor, commands: torch.Tensor) -> torch.Tensor:  # type: ignore
+        contact_force_diff = foot_contact_force - foot_contact_force.mean(dim=1, keepdim=True)
         contact_force_diff = torch.square(contact_force_diff).sum(dim=1)
         contact_force_diff *= torch.norm(commands, dim=1) < 0.1
         return -contact_force_diff
@@ -295,14 +295,14 @@ class FeetContactForceLimitPenalty(RewardTerm):
     Penalize the feet contact force limit violations.
 
     Args:
-        feet_contact_force: Feet contact force tensor of shape (B, N) where B is the batch size and N is the number of feet.
+        foot_contact_force: Feet contact force tensor of shape (B, N) where B is the batch size and N is the number of feet.
     """
 
-    required_keys = ("feet_contact_force",)
+    required_keys = ("foot_contact_force",)
     contact_force_limit: float = 0.0
 
-    def _compute(self, feet_contact_force: torch.Tensor) -> torch.Tensor:  # type: ignore
-        out_of_limits = (feet_contact_force - self.contact_force_limit).clip(min=0.0).square()
+    def _compute(self, foot_contact_force: torch.Tensor) -> torch.Tensor:  # type: ignore
+        out_of_limits = (foot_contact_force - self.contact_force_limit).clip(min=0.0).square()
         return -torch.sum(out_of_limits, dim=1)
 
 

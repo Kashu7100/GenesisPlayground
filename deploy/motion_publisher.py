@@ -143,7 +143,10 @@ def publish_motion(
                 link_lin_vel,
                 link_ang_vel,
                 foot_contact,
+                foot_contact_weighted,
             ) = motion_lib.get_ref_motion_frame(motion_ids=motion_id_t, motion_times=motion_time_t)
+
+            _ = foot_contact_weighted
 
             # Filter link states to tracking links if requested
             if link_indices is not None:

@@ -43,6 +43,7 @@ class CustomScene(FlatScene):
             show_viewer=show_viewer,
             # renderer=_renderer,
         )
+        self._gravity = abs(self._scene.gravity[2].item())
         #
         if not args.remove_ground:
             self._plane = self._scene.add_entity(

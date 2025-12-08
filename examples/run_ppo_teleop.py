@@ -260,7 +260,10 @@ def evaluate_policy(
 
         link_name_to_idx = {}
         for link_name in env.scene.objects.keys():
-            link_name_to_idx[link_name] = env.robot.link_names.index(link_name)
+            link_name_to_idx[link_name] = env_args.tracking_link_names.index(link_name)
+        foot_link_tracking_idx = [
+            env_args.tracking_link_names.index(name) for name in env_args.robot_args.foot_link_names
+        ]
 
         while True:
             env.time_since_reset[0] = 0.0
@@ -301,12 +304,37 @@ def evaluate_policy(
                     torch.tensor([0, 0, 1], device=env.device, dtype=torch.float),
                 )
                 for link_name in env.scene.objects.keys():
-                    ref_link_pos = env.ref_link_pos_local_yaw[:, link_name_to_idx[link_name]]
-                    ref_link_quat = env.ref_link_quat_local_yaw[:, link_name_to_idx[link_name]]
+                    ref_link_pos = env.ref_tracking_link_pos_local_yaw[
+                        :, link_name_to_idx[link_name]
+                    ]
+                    ref_link_quat = env.ref_tracking_link_quat_local_yaw[
+                        :, link_name_to_idx[link_name]
+                    ]
                     ref_link_pos = quat_apply(ref_quat_yaw, ref_link_pos)
                     ref_link_pos[:, :2] += env.ref_base_pos[:, :2]
                     ref_link_quat = quat_mul(ref_quat_yaw, ref_link_quat)
                     env.scene.set_obj_pose(link_name, pos=ref_link_pos, quat=ref_link_quat)
+                env.scene.scene.clear_debug_objects()
+                for i in range(len(env.robot.foot_links_idx)):
+                    env.scene.scene.draw_debug_arrow(
+                        env.link_positions[0, env.robot.foot_links_idx[i]],
+                        env.foot_contact_weighted[0, i]
+                        * torch.tensor([0.0, 0.0, 1.0], device=env.device),
+                        radius=0.01,
+                        color=(0.0, 1.0, 0.0),
+                    )
+                    foot_link_pos = env.ref_tracking_link_pos_local_yaw[
+                        :, foot_link_tracking_idx[i]
+                    ]
+                    foot_link_pos = quat_apply(ref_quat_yaw, foot_link_pos)
+                    foot_link_pos[:, :2] += env.ref_base_pos[:, :2]
+                    env.scene.scene.draw_debug_arrow(
+                        foot_link_pos,
+                        env.ref_foot_contact_weighted[0, i]
+                        * torch.tensor([0.0, 0.0, 1.0], device=env.device),
+                        radius=0.01,
+                        color=(0.0, 0.0, 1.0),
+                    )
 
                 step_count += 1
 
@@ -627,7 +655,7 @@ def view_motion(env_args: Any, show_viewer: bool = False) -> None:
                 torch.IntTensor([motion_id])
             ):
                 env.scene.scene.step(refresh_visualizer=False)
-                env.time_since_reset[0] += 0.1
+                env.time_since_reset[0] += 0.02
                 env.hard_sync_motion(torch.IntTensor([0]))
                 env.update_buffers()
                 for link_name in env.scene.objects.keys():
@@ -638,13 +666,13 @@ def view_motion(env_args: Any, show_viewer: bool = False) -> None:
                 for i in range(len(env.robot.foot_links_idx)):
                     env.scene.scene.draw_debug_arrow(
                         env.link_positions[0, env.robot.foot_links_idx[i]],
-                        env.ref_foot_contact[0, i]
-                        * torch.tensor([0.0, 0.0, 0.5], device=env.device),
+                        env.ref_foot_contact_weighted[0, i]
+                        * torch.tensor([0.0, 0.0, 1.0], device=env.device),
                         radius=0.01,
                         color=(0.0, 0.0, 1.0),
                     )
 
-                while time.time() - last_update_time < 0.1:
+                while time.time() - last_update_time < 0.02:
                     time.sleep(0.01)
                 last_update_time = time.time()
             env.time_since_reset[0] = 0.0
