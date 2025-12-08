@@ -169,7 +169,10 @@ class LeggedRobotEnv(BaseEnv):
         self.link_quaternions = torch.zeros(
             (self.num_envs, self._robot.n_links, 4), device=self._device, dtype=torch.float32
         )
-        self.link_velocities = torch.zeros(
+        self.link_lin_velocities = torch.zeros(
+            (self.num_envs, self._robot.n_links, 3), device=self._device, dtype=torch.float32
+        )
+        self.link_ang_velocities = torch.zeros(
             (self.num_envs, self._robot.n_links, 3), device=self._device, dtype=torch.float32
         )
 
@@ -442,7 +445,8 @@ class LeggedRobotEnv(BaseEnv):
         self.link_contact_forces[:] = self._robot.link_contact_forces
         self.link_positions[:] = self._robot.link_positions
         self.link_quaternions[:] = self._robot.link_quaternions
-        self.link_velocities[:] = self._robot.link_velocities
+        self.link_lin_velocities[:] = self._robot.link_lin_velocities
+        self.link_ang_velocities[:] = self._robot.link_ang_velocities
 
     def get_reward(self) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         reward_total = torch.zeros(self.num_envs, device=self._device)

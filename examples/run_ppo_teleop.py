@@ -613,7 +613,7 @@ def view_motion(env_args: Any, show_viewer: bool = False) -> None:
 
     link_name_to_idx = {}
     for link_name in env.scene.objects.keys():
-        link_name_to_idx[link_name] = env.robot.link_names.index(link_name)
+        link_name_to_idx[link_name] = env.motion_lib.tracking_link_names.index(link_name)
 
     def run() -> None:
         nonlocal env
@@ -631,8 +631,8 @@ def view_motion(env_args: Any, show_viewer: bool = False) -> None:
                 env.hard_sync_motion(torch.IntTensor([0]))
                 env.update_buffers()
                 for link_name in env.scene.objects.keys():
-                    link_pos = env.ref_link_pos_local_yaw[:, link_name_to_idx[link_name]]
-                    link_quat = env.ref_link_quat_local_yaw[:, link_name_to_idx[link_name]]
+                    link_pos = env.ref_tracking_link_pos_local_yaw[:, link_name_to_idx[link_name]]
+                    link_quat = env.ref_tracking_link_quat_local_yaw[:, link_name_to_idx[link_name]]
                     env.scene.set_obj_pose(link_name, pos=link_pos, quat=link_quat)
                 env.scene.scene.clear_debug_objects()
                 for i in range(len(env.robot.foot_links_idx)):

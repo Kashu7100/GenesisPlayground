@@ -4,6 +4,7 @@ import torch
 
 from gs_env.common.utils.math_utils import (
     quat_apply,
+    quat_diff,
     quat_error_magnitude,
     quat_from_angle_axis,
     quat_from_euler,
@@ -120,12 +121,6 @@ class MotionEnv(LeggedRobotEnv):
         self.ref_base_ang_vel_local = torch.zeros(self.num_envs, 3, device=self._device)
         self.ref_dof_pos = torch.zeros(self.num_envs, self._robot.dof_dim, device=self._device)
         self.ref_dof_vel = torch.zeros(self.num_envs, self._robot.dof_dim, device=self._device)
-        self.ref_link_pos_local_yaw = torch.zeros(
-            self.num_envs, self._robot.n_links, 3, device=self._device
-        )
-        self.ref_link_quat_local_yaw = torch.zeros(
-            self.num_envs, self._robot.n_links, 4, device=self._device
-        )
 
         if self._args.dof_weights is not None:
             dof_weights_list = []
@@ -146,17 +141,15 @@ class MotionEnv(LeggedRobotEnv):
         self.dof_vel_error_weighted = torch.zeros(self.num_envs, device=self._device)
 
         # Motion library and reference buffers
-        self._motion_lib = MotionLib(motion_file=self._args.motion_file, device=self._device)
+        self._motion_lib = MotionLib(
+            motion_file=self._args.motion_file,
+            device=self._device,
+            tracking_link_names=self._args.tracking_link_names,
+        )
         if self._args.motion_file is not None:
-            self.ref_link_idx_local = [
-                self._motion_lib.get_link_idx_local_by_name(name) for name in self.robot.link_names
-            ]
             self.ref_joint_idx_local = [
                 self._motion_lib.get_joint_idx_by_name(name) for name in self.robot.dof_names
             ]
-            assert self._motion_lib.foot_link_indices == self.robot.foot_links_idx, (
-                "foot link indices do not match"
-            )
         observed_steps = self._args.observed_steps
         self._motion_obs_steps = self.motion_lib.get_observed_steps(observed_steps)
 
@@ -202,7 +195,6 @@ class MotionEnv(LeggedRobotEnv):
                 curr_motion_obs_dict,
                 future_motion_obs_dict,
                 dummy_envs_idx,
-                tracking_link_idx_local=self.tracking_link_idx_local,
                 base_quat=self.base_quat,
             )
             NUM_MOTION_OBS = motion_obs_sample.shape[1]
@@ -223,6 +215,24 @@ class MotionEnv(LeggedRobotEnv):
         self.ref_tracking_link_quat_local_yaw = torch.zeros(
             self.num_envs, len(self.tracking_link_idx_local), 4, device=self._device
         )
+        self.tracking_link_lin_vel_global = torch.zeros(
+            self.num_envs, len(self.tracking_link_idx_local), 3, device=self._device
+        )
+        self.tracking_link_ang_vel_global = torch.zeros(
+            self.num_envs, len(self.tracking_link_idx_local), 3, device=self._device
+        )
+        self.tracking_link_lin_vel_local_yaw = torch.zeros(
+            self.num_envs, len(self.tracking_link_idx_local), 3, device=self._device
+        )
+        self.tracking_link_ang_vel_local_yaw = torch.zeros(
+            self.num_envs, len(self.tracking_link_idx_local), 3, device=self._device
+        )
+        self.ref_tracking_link_lin_vel_global = torch.zeros(
+            self.num_envs, len(self.tracking_link_idx_local), 3, device=self._device
+        )
+        self.ref_tracking_link_ang_vel_global = torch.zeros(
+            self.num_envs, len(self.tracking_link_idx_local), 3, device=self._device
+        )
         self.ref_foot_contact = torch.zeros(
             self.num_envs, len(self._robot.foot_links_idx), device=self._device
         )
@@ -240,6 +250,15 @@ class MotionEnv(LeggedRobotEnv):
         self.diff_base_lin_vel_local = torch.zeros(self.num_envs, 3, device=self._device)
         self.diff_base_ang_vel_local = torch.zeros(self.num_envs, 3, device=self._device)
         self.diff_tracking_link_pos_local_yaw = torch.zeros(
+            self.num_envs, len(self.tracking_link_idx_local), 3, device=self._device
+        )
+        self.diff_tracking_link_rotation_6D = torch.zeros(
+            self.num_envs, len(self.tracking_link_idx_local), 6, device=self._device
+        )
+        self.diff_tracking_link_lin_vel_local_yaw = torch.zeros(
+            self.num_envs, len(self.tracking_link_idx_local), 3, device=self._device
+        )
+        self.diff_tracking_link_ang_vel_local_yaw = torch.zeros(
             self.num_envs, len(self.tracking_link_idx_local), 3, device=self._device
         )
 
@@ -512,20 +531,33 @@ class MotionEnv(LeggedRobotEnv):
 
         link_pos_local_yaw = self._robot.link_positions
         link_pos_local_yaw[:, :, :2] -= self.base_pos[:, None, :2]
-        inv_quat_yaw = quat_from_angle_axis(
-            -self.base_euler[:, 2], torch.tensor([0, 0, 1], device=self._device, dtype=torch.float)
-        )[:, None, :].repeat(1, self._robot.n_links, 1)
-        link_pos_local_yaw = quat_apply(inv_quat_yaw, link_pos_local_yaw)
+        quat_yaw = quat_from_angle_axis(
+            self.base_euler[:, 2], torch.tensor([0, 0, 1], device=self._device, dtype=torch.float)
+        )
+        link_pos_local_yaw = self.batched_global_to_local(quat_yaw, link_pos_local_yaw)
         self.link_pos_local_yaw[:] = link_pos_local_yaw
-        link_quat_local_yaw = quat_mul(inv_quat_yaw, self._robot.link_quaternions)
+        link_quat_local_yaw = self.batched_global_to_local(quat_yaw, self._robot.link_quaternions)
         self.link_quat_local_yaw[:] = link_quat_local_yaw
-        self.link_velocities[:] = self._robot.link_velocities
         self.tracking_link_pos_local_yaw[:] = self.link_pos_local_yaw[
             :, self.tracking_link_idx_local
         ]
         self.tracking_link_quat_local_yaw[:] = self.link_quat_local_yaw[
             :, self.tracking_link_idx_local
         ]
+        self.link_lin_velocities[:] = self._robot.link_lin_velocities
+        self.link_ang_velocities[:] = self._robot.link_ang_velocities
+        self.tracking_link_lin_vel_global[:] = self.link_lin_velocities[
+            :, self.tracking_link_idx_local
+        ]
+        self.tracking_link_ang_vel_global[:] = self.link_ang_velocities[
+            :, self.tracking_link_idx_local
+        ]
+        self.tracking_link_lin_vel_local_yaw[:] = self.batched_global_to_local(
+            quat_yaw, self.tracking_link_lin_vel_global
+        )
+        self.tracking_link_ang_vel_local_yaw[:] = self.batched_global_to_local(
+            quat_yaw, self.tracking_link_ang_vel_global
+        )
 
         self.dof_pos_error_weighted[:] = torch.sum(
             self.dof_weights * torch.square(self.dof_pos - self.ref_dof_pos), dim=-1
@@ -536,7 +568,7 @@ class MotionEnv(LeggedRobotEnv):
 
         # contacts
         self.feet_height[:] = self.link_positions[:, self._robot.foot_links_idx, 2]
-        self.feet_velocity[:] = self.link_velocities[:, self._robot.foot_links_idx]
+        self.feet_velocity[:] = self.link_lin_velocities[:, self._robot.foot_links_idx]
         self.feet_contact_force[:] = self.link_contact_forces[:, self._robot.foot_links_idx, 2]
         self.feet_contact[:] = self.feet_contact_force > 1.0
 
@@ -616,6 +648,8 @@ class MotionEnv(LeggedRobotEnv):
             dof_vel,
             link_pos_local,
             link_quat_local,
+            link_lin_vel_global,
+            link_ang_vel_global,
             foot_contact,
         ) = self._motion_lib.get_ref_motion_frame(motion_ids, motion_times)
 
@@ -629,7 +663,6 @@ class MotionEnv(LeggedRobotEnv):
             curr_motion_obs_dict,
             future_motion_obs_dict,
             envs_idx,
-            tracking_link_idx_local=self.tracking_link_idx_local,
             base_quat=self.base_quat[envs_idx],
         )
 
@@ -654,14 +687,10 @@ class MotionEnv(LeggedRobotEnv):
         self.ref_base_ang_vel_local[envs_idx] = base_ang_vel_local
         self.ref_dof_pos[envs_idx] = dof_pos[:, self.ref_joint_idx_local]
         self.ref_dof_vel[envs_idx] = dof_vel[:, self.ref_joint_idx_local]
-        self.ref_link_pos_local_yaw[envs_idx] = link_pos_local[:, self.ref_link_idx_local]
-        self.ref_link_quat_local_yaw[envs_idx] = link_quat_local[:, self.ref_link_idx_local]
-        self.ref_tracking_link_pos_local_yaw[envs_idx] = self.ref_link_pos_local_yaw[envs_idx][
-            :, self.tracking_link_idx_local
-        ]
-        self.ref_tracking_link_quat_local_yaw[envs_idx] = self.ref_link_quat_local_yaw[envs_idx][
-            :, self.tracking_link_idx_local
-        ]
+        self.ref_tracking_link_pos_local_yaw[envs_idx] = link_pos_local
+        self.ref_tracking_link_quat_local_yaw[envs_idx] = link_quat_local
+        self.ref_tracking_link_lin_vel_global[envs_idx] = link_lin_vel_global
+        self.ref_tracking_link_ang_vel_global[envs_idx] = link_ang_vel_global
         self.ref_foot_contact[envs_idx] = foot_contact
 
         pos_diff = self.ref_base_pos[envs_idx] - self.base_pos[envs_idx]
@@ -670,8 +699,8 @@ class MotionEnv(LeggedRobotEnv):
             torch.tensor([0, 0, 1], device=self._device, dtype=torch.float),
         )
         self.diff_base_pos_local_yaw[envs_idx] = self.batched_global_to_local(quat_yaw, pos_diff)
-        quat_diff = quat_mul(quat_inv(self.base_quat[envs_idx]), self.ref_base_quat[envs_idx])
-        self.diff_base_rotation_6D[envs_idx] = quat_to_rotation_6D(quat_diff)
+        base_quat_diff = quat_diff(self.base_quat[envs_idx], self.ref_base_quat[envs_idx])
+        self.diff_base_rotation_6D[envs_idx] = quat_to_rotation_6D(base_quat_diff)
         self.diff_base_euler[envs_idx] = self.ref_base_euler[envs_idx] - self.base_euler[envs_idx]
         self.diff_dof_pos[envs_idx] = self.ref_dof_pos[envs_idx] - self.dof_pos[envs_idx]
         self.diff_dof_vel[envs_idx] = self.ref_dof_vel[envs_idx] - self.dof_vel[envs_idx]
@@ -686,69 +715,25 @@ class MotionEnv(LeggedRobotEnv):
                 self.tracking_link_pos_local_yaw[envs_idx]
                 - self.ref_tracking_link_pos_local_yaw[envs_idx]
             )
-
-    # def _build_motion_obs_from_dict(
-    #     self,
-    #     curr_obs: dict[str, torch.Tensor],
-    #     future_obs: dict[str, torch.Tensor],
-    #     envs_idx: torch.Tensor,
-    # ) -> torch.Tensor:
-    #     """Transform motion observations into local-yaw space and 6D rotations.
-
-    #     Returns processed (curr_dict, future_dict), without touching self.ref_ variables.
-    #     """
-    #     B = envs_idx.shape[0]
-    #     motion_obs_list: list[torch.Tensor] = []
-
-    #     # Compute yaw quaternion from current base quat if available
-    #     quat_yaw = curr_obs["quat_yaw"]
-
-    #     if "base_pos" in future_obs:
-    #         pos_diff = future_obs["base_pos"] - curr_obs["base_pos"][:, None, :]
-    #         motion_obs_list.append(
-    #             LeggedRobotEnv.batched_global_to_local(quat_yaw, pos_diff).reshape(B, -1)
-    #         )
-    #     if "base_quat" in future_obs:
-    #         qy = quat_yaw[:, None, :].repeat(1, future_obs["base_quat"].shape[1], 1)
-    #         base_quat_local = quat_mul(quat_inv(qy), future_obs["base_quat"])
-    #         base_quat = self.base_quat[envs_idx, None, :].repeat(
-    #             1, future_obs["base_quat"].shape[1], 1
-    #         )
-    #         base_quat_diff = quat_mul(quat_inv(base_quat), future_obs["base_quat"])
-    #         motion_obs_list.append(quat_to_rotation_6D(base_quat_local).reshape(B, -1))
-    #         motion_obs_list.append(quat_to_rotation_6D(base_quat_diff).reshape(B, -1))
-    #     if "base_lin_vel" in future_obs:
-    #         motion_obs_list.append(
-    #             LeggedRobotEnv.batched_global_to_local(
-    #                 quat_yaw, future_obs["base_lin_vel"]
-    #             ).reshape(B, -1)
-    #         )
-    #     if "base_ang_vel" in future_obs:
-    #         motion_obs_list.append(
-    #             LeggedRobotEnv.batched_global_to_local(
-    #                 quat_yaw, future_obs["base_ang_vel"]
-    #             ).reshape(B, -1)
-    #         )
-    #     if "base_ang_vel_local" in future_obs:
-    #         motion_obs_list.append(future_obs["base_ang_vel_local"].reshape(B, -1))
-    #     if "dof_pos" in future_obs:
-    #         motion_obs_list.append(future_obs["dof_pos"].reshape(B, -1))
-    #     if "dof_vel" in future_obs:
-    #         motion_obs_list.append(0.1 * future_obs["dof_vel"].reshape(B, -1))
-    #     if "link_pos_local" in future_obs:
-    #         motion_obs_list.append(
-    #             future_obs["link_pos_local"][:, :, self.tracking_link_idx_local, :].reshape(B, -1)
-    #         )
-    #     if "link_quat_local" in future_obs:
-    #         motion_obs_list.append(
-    #             quat_to_rotation_6D(
-    #                 future_obs["link_quat_local"][:, :, self.tracking_link_idx_local, :]
-    #             ).reshape(B, -1)
-    #         )
-    #     if "foot_contact" in future_obs:
-    #         motion_obs_list.append(future_obs["foot_contact"].reshape(B, -1))
-
-    #     return torch.cat(motion_obs_list, dim=-1)
+            link_quat_diff = quat_diff(
+                self.ref_tracking_link_quat_local_yaw[envs_idx],
+                self.tracking_link_quat_local_yaw[envs_idx],
+            )
+            self.diff_tracking_link_rotation_6D[envs_idx] = quat_to_rotation_6D(link_quat_diff)
+            diff_tracking_link_lin_vel_global = (
+                self.ref_tracking_link_lin_vel_global[envs_idx]
+                - self.tracking_link_lin_vel_global[envs_idx]
+            )
+            diff_tracking_link_ang_vel_global = (
+                self.ref_tracking_link_ang_vel_global[envs_idx]
+                - self.tracking_link_ang_vel_global[envs_idx]
+            )
+            self.diff_tracking_link_lin_vel_local_yaw[envs_idx] = self.batched_global_to_local(
+                quat_yaw, diff_tracking_link_lin_vel_global
+            )
+            self.diff_tracking_link_ang_vel_local_yaw[envs_idx] = self.batched_global_to_local(
+                quat_yaw, diff_tracking_link_ang_vel_global
+            )
 
     def get_observations(self, obs_args: Any = None) -> tuple[torch.Tensor, torch.Tensor]:
         """Override to support teacher-specific motion_obs differing from student's config."""
@@ -772,7 +757,6 @@ class MotionEnv(LeggedRobotEnv):
                         curr_d,
                         future_d,
                         envs_idx,
-                        tracking_link_idx_local=self.tracking_link_idx_local,
                         base_quat=self.base_quat[envs_idx],
                     )
                 else:

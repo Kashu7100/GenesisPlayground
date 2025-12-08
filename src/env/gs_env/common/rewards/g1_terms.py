@@ -426,6 +426,42 @@ class TrackingLinkQuatReward(RewardTerm):
         return -tracking_link_quat_error
 
 
+class TrackingLinkLinVelReward(RewardTerm):
+    """
+    Reward the tracking link linear velocity.
+    """
+
+    required_keys = ("tracking_link_lin_vel_global", "ref_tracking_link_lin_vel_global")
+
+    def _compute(
+        self,
+        tracking_link_lin_vel_global: torch.Tensor,
+        ref_tracking_link_lin_vel_global: torch.Tensor,
+    ) -> torch.Tensor:  # type: ignore
+        tracking_link_lin_vel_error = torch.square(
+            tracking_link_lin_vel_global - ref_tracking_link_lin_vel_global
+        ).sum(dim=[-1, -2])
+        return -tracking_link_lin_vel_error
+
+
+class TrackingLinkAngVelReward(RewardTerm):
+    """
+    Reward the tracking link angular velocity.
+    """
+
+    required_keys = ("tracking_link_ang_vel_global", "ref_tracking_link_ang_vel_global")
+
+    def _compute(
+        self,
+        tracking_link_ang_vel_global: torch.Tensor,
+        ref_tracking_link_ang_vel_global: torch.Tensor,
+    ) -> torch.Tensor:  # type: ignore
+        tracking_link_ang_vel_error = torch.square(
+            tracking_link_ang_vel_global - ref_tracking_link_ang_vel_global
+        ).sum(dim=[-1, -2])
+        return -tracking_link_ang_vel_error
+
+
 class FootContactForceReward(RewardTerm):
     """
     Reward the foot contact.

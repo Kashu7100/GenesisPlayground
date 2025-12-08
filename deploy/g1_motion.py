@@ -191,12 +191,16 @@ def main(
                 ref_dof_vel,
                 ref_link_pos_local,
                 ref_link_quat_local,
+                ref_link_lin_vel,
+                ref_link_ang_vel,
                 ref_foot_contact,
             ) = motion_lib.get_ref_motion_frame(motion_ids=motion_id_t, motion_times=motion_time_t)
 
             _ = ref_base_ang_vel_local
             _ = ref_link_pos_local
             _ = ref_link_quat_local
+            _ = ref_link_lin_vel
+            _ = ref_link_ang_vel
             _ = ref_foot_contact
 
             # Construct observation (matching training observation structure)

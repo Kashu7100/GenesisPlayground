@@ -140,6 +140,8 @@ def publish_motion(
                 dof_vel,
                 link_pos_local,
                 link_quat_local,
+                link_lin_vel,
+                link_ang_vel,
                 foot_contact,
             ) = motion_lib.get_ref_motion_frame(motion_ids=motion_id_t, motion_times=motion_time_t)
 
@@ -158,6 +160,8 @@ def publish_motion(
             r.set(f"{key}:motion:dof_vel", json.dumps(_to_list(dof_vel)))
             r.set(f"{key}:motion:link_pos_local", json.dumps(_to_list(link_pos_local)))
             r.set(f"{key}:motion:link_quat_local", json.dumps(_to_list(link_quat_local)))
+            r.set(f"{key}:motion:link_lin_vel", json.dumps(_to_list(link_lin_vel)))
+            r.set(f"{key}:motion:link_ang_vel", json.dumps(_to_list(link_ang_vel)))
             r.set(f"{key}:motion:foot_contact", json.dumps(_to_list(foot_contact)))
             r.set(f"{key}:timestamp:base_pos", timestamp)
             r.set(f"{key}:timestamp:base_quat", timestamp)
@@ -168,6 +172,8 @@ def publish_motion(
             r.set(f"{key}:timestamp:dof_vel", timestamp)
             r.set(f"{key}:timestamp:link_pos_local", timestamp)
             r.set(f"{key}:timestamp:link_quat_local", timestamp)
+            r.set(f"{key}:timestamp:link_lin_vel", timestamp)
+            r.set(f"{key}:timestamp:link_ang_vel", timestamp)
             r.set(f"{key}:timestamp:foot_contact", timestamp)
             timestamp += 1
     except KeyboardInterrupt:

@@ -156,7 +156,7 @@ def main(
     def run_pd_test() -> None:
         NUM_EPOCHS = 1
         FREQ_N = 10
-        DAMP_RATIO = 0.5
+        DAMP_RATIO = 1.0
         nonlocal env, extra_impedance
         post_order_dof_names = [joint.name for joint in reversed(env.robot.joints)]
         # post_order_dof_names = ["left_ankle_pitch_joint"]
