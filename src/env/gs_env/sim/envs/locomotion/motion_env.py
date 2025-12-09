@@ -309,6 +309,7 @@ class MotionEnv(LeggedRobotEnv):
                     error_name
                 ][0]
                 self._error_mask_buffer[error_name] = []
+        self.deviation_buf = torch.ones(self.num_envs, device=self._device, dtype=torch.float32)
 
         # randomize base yaw offset
         self.base_yaw_offset = torch.zeros(self.num_envs, device=self._device, dtype=torch.float32)
@@ -476,6 +477,12 @@ class MotionEnv(LeggedRobotEnv):
         error_dict["dof_pos_error"] = dof_pos_error.clone()
         error_dict["tracking_link_pos_error"] = tracking_link_pos_error.clone()
         error_dict["foot_contact_force_error"] = foot_contact_force_error.clone()
+
+        self.deviation_buf = torch.ones_like(self.deviation_buf)
+        for key in self.deviation_thresholds.keys():
+            self.deviation_buf *= (2 - error_dict[key] / self.deviation_thresholds[key]).clamp(
+                max=1.0, min=0.0
+            )
 
         error_mean_dict = {}
         for key, value in error_dict.items():

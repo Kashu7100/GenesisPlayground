@@ -332,8 +332,8 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
     adaptive_termination_ratio=None,
     deviation_thresholds={
         "base_pos_error": 0.3,
-        "base_quat": 0.4,
-        "base_lin_vel": 2.0,
+        "base_quat_error": 0.4,
+        "base_lin_vel_error": 2.0,
     },
     observed_steps={
         "base_pos": [1, 2, 3, 4, 6, 8, 12, 16, 24, 32],
@@ -504,8 +504,8 @@ EnvArgsRegistry["g1_motion"] = MotionEnvArgs(
     },
     adaptive_termination_ratio=None,
     deviation_thresholds={
-        "base_quat": 1.0,
-        "base_lin_vel": 2.0,
+        "base_quat_error": 0.4,
+        "base_lin_vel_error": 2.0,
     },
     observed_steps={
         "base_pos": [

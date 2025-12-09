@@ -250,13 +250,16 @@ class DofPosReward(RewardTerm):
 
     Args:
         dof_pos_error_weighted: DoF position tensor of shape (B,) where B is the batch size.
+        deviation_buf: Deviation buffer tensor of shape (B,) where B is the batch size.
     """
 
-    required_keys = ("dof_pos_error_weighted",)
+    required_keys = ("dof_pos_error_weighted", "deviation_buf")
 
-    def _compute(self, dof_pos_error_weighted: torch.Tensor) -> torch.Tensor:  # type: ignore
+    def _compute(
+        self, dof_pos_error_weighted: torch.Tensor, deviation_buf: torch.Tensor
+    ) -> torch.Tensor:  # type: ignore
         # return torch.exp(-dof_pos_error_weighted * 0.15)
-        return -dof_pos_error_weighted
+        return -dof_pos_error_weighted * deviation_buf
 
 
 class DofVelReward(RewardTerm):
@@ -265,13 +268,16 @@ class DofVelReward(RewardTerm):
 
     Args:
         dof_vel_error_weighted: DoF velocity tensor of shape (B,) where B is the batch size .
+        deviation_buf: Deviation buffer tensor of shape (B,) where B is the batch size.
     """
 
-    required_keys = ("dof_vel_error_weighted",)
+    required_keys = ("dof_vel_error_weighted", "deviation_buf")
 
-    def _compute(self, dof_vel_error_weighted: torch.Tensor) -> torch.Tensor:  # type: ignore
+    def _compute(
+        self, dof_vel_error_weighted: torch.Tensor, deviation_buf: torch.Tensor
+    ) -> torch.Tensor:  # type: ignore
         # return torch.exp(-dof_vel_error_weighted * 0.01)
-        return -dof_vel_error_weighted
+        return -dof_vel_error_weighted * deviation_buf
 
 
 class BaseHeightReward(RewardTerm):
@@ -376,6 +382,7 @@ class TrackingLinkPosReward(RewardTerm):
         "tracking_link_pos_local_yaw",
         "ref_tracking_link_pos_local_yaw",
         "tracking_link_weights",
+        "deviation_buf",
     )
 
     def _compute(
@@ -383,6 +390,7 @@ class TrackingLinkPosReward(RewardTerm):
         tracking_link_pos_local_yaw: torch.Tensor,
         ref_tracking_link_pos_local_yaw: torch.Tensor,
         tracking_link_weights: torch.Tensor,
+        deviation_buf: torch.Tensor,
     ) -> torch.Tensor:  # type: ignore
         tracking_link_pos_error = (
             torch.square(tracking_link_pos_local_yaw - ref_tracking_link_pos_local_yaw).sum(dim=-1)
@@ -390,7 +398,7 @@ class TrackingLinkPosReward(RewardTerm):
         ).sum(dim=-1)
         # print("tracking_link_pos_error", tracking_link_pos_error * 1)
         # return torch.exp(-tracking_link_pos_error * 2)
-        return -tracking_link_pos_error
+        return -tracking_link_pos_error * deviation_buf
 
 
 class TrackingLinkQuatReward(RewardTerm):
@@ -407,6 +415,7 @@ class TrackingLinkQuatReward(RewardTerm):
         "tracking_link_quat_local_yaw",
         "ref_tracking_link_quat_local_yaw",
         "tracking_link_weights",
+        "deviation_buf",
     )
 
     def _compute(
@@ -414,6 +423,7 @@ class TrackingLinkQuatReward(RewardTerm):
         tracking_link_quat_local_yaw: torch.Tensor,
         ref_tracking_link_quat_local_yaw: torch.Tensor,
         tracking_link_weights: torch.Tensor,
+        deviation_buf: torch.Tensor,
     ) -> torch.Tensor:  # type: ignore
         tracking_link_quat_error = (
             quat_to_angle_axis(
@@ -423,7 +433,7 @@ class TrackingLinkQuatReward(RewardTerm):
         ).sum(dim=-1)
         # print("tracking_link_quat_error", tracking_link_quat_error * 1)
         # return torch.exp(-tracking_link_quat_error * 2)
-        return -tracking_link_quat_error
+        return -tracking_link_quat_error * deviation_buf
 
 
 class TrackingLinkLinVelReward(RewardTerm):
@@ -431,17 +441,22 @@ class TrackingLinkLinVelReward(RewardTerm):
     Reward the tracking link linear velocity.
     """
 
-    required_keys = ("tracking_link_lin_vel_global", "ref_tracking_link_lin_vel_global")
+    required_keys = (
+        "tracking_link_lin_vel_global",
+        "ref_tracking_link_lin_vel_global",
+        "deviation_buf",
+    )
 
     def _compute(
         self,
         tracking_link_lin_vel_global: torch.Tensor,
         ref_tracking_link_lin_vel_global: torch.Tensor,
+        deviation_buf: torch.Tensor,
     ) -> torch.Tensor:  # type: ignore
         tracking_link_lin_vel_error = torch.square(
             tracking_link_lin_vel_global - ref_tracking_link_lin_vel_global
         ).sum(dim=[-1, -2])
-        return -tracking_link_lin_vel_error
+        return -tracking_link_lin_vel_error * deviation_buf
 
 
 class TrackingLinkAngVelReward(RewardTerm):
@@ -449,17 +464,22 @@ class TrackingLinkAngVelReward(RewardTerm):
     Reward the tracking link angular velocity.
     """
 
-    required_keys = ("tracking_link_ang_vel_global", "ref_tracking_link_ang_vel_global")
+    required_keys = (
+        "tracking_link_ang_vel_global",
+        "ref_tracking_link_ang_vel_global",
+        "deviation_buf",
+    )
 
     def _compute(
         self,
         tracking_link_ang_vel_global: torch.Tensor,
         ref_tracking_link_ang_vel_global: torch.Tensor,
+        deviation_buf: torch.Tensor,
     ) -> torch.Tensor:  # type: ignore
         tracking_link_ang_vel_error = torch.square(
             tracking_link_ang_vel_global - ref_tracking_link_ang_vel_global
         ).sum(dim=[-1, -2])
-        return -tracking_link_ang_vel_error
+        return -tracking_link_ang_vel_error * deviation_buf
 
 
 class TrackingFootContactReward(RewardTerm):
@@ -471,30 +491,16 @@ class TrackingFootContactReward(RewardTerm):
         ref_foot_contact_weighted: Reference foot contact weighted tensor of shape (B, N) where B is the batch size and N is the number of feet.
     """
 
-    required_keys = ("foot_contact_weighted", "ref_foot_contact_weighted")
+    required_keys = ("foot_contact_weighted", "ref_foot_contact_weighted", "ref_foot_contact")
 
     def _compute(
-        self, foot_contact_weighted: torch.Tensor, ref_foot_contact_weighted: torch.Tensor
+        self,
+        foot_contact_weighted: torch.Tensor,
+        ref_foot_contact_weighted: torch.Tensor,
+        ref_foot_contact: torch.Tensor,
     ) -> torch.Tensor:  # type: ignore
+        # reward
         foot_contact_weighted_error = (
-            (0.8 * ref_foot_contact_weighted - foot_contact_weighted).clamp(min=0.0).sum(dim=-1)
-        )
-        return -foot_contact_weighted_error
-
-
-class FootContactForceReward(RewardTerm):
-    """
-    Reward the foot contact.
-
-    Args:
-        foot_contact_force: Feet contact force tensor of shape (B, N) where B is the batch size and N is the number of feet.
-        ref_foot_contact: Reference foot contact tensor of shape (B, N) where B is the batch size and N is the number of feet.
-    """
-
-    required_keys = ("foot_contact_force", "ref_foot_contact")
-
-    def _compute(
-        self, foot_contact_force: torch.Tensor, ref_foot_contact: torch.Tensor
-    ) -> torch.Tensor:  # type: ignore
-        contact_force = foot_contact_force * (1 - ref_foot_contact) ** 2
-        return -torch.square(contact_force).sum(dim=-1)
+            (0.8 * ref_foot_contact_weighted - foot_contact_weighted).clamp(min=0.0)
+        ) + foot_contact_weighted * (1 - ref_foot_contact) ** 2
+        return -foot_contact_weighted_error.sum(dim=-1)
