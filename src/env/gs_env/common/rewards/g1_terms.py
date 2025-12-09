@@ -477,9 +477,7 @@ class TrackingFootContactReward(RewardTerm):
         self, foot_contact_weighted: torch.Tensor, ref_foot_contact_weighted: torch.Tensor
     ) -> torch.Tensor:  # type: ignore
         foot_contact_weighted_error = (
-            torch.square(foot_contact_weighted - ref_foot_contact_weighted)
-            .clamp(max=0.25)
-            .sum(dim=-1)
+            (0.8 * ref_foot_contact_weighted - foot_contact_weighted).clamp(min=0.0).sum(dim=-1)
         )
         return -foot_contact_weighted_error
 

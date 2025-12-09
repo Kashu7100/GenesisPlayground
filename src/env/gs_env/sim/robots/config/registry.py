@@ -442,7 +442,7 @@ RobotArgsRegistry["g1_default"] = HumanoidRobotArgs(
     decimation=4,
     adaptive_action_scale=False,
     indirect_drive_joint_names=G1_indirect_drive_joints,
-    feed_forward_ratio=1.0,
+    feed_forward_ratio=0.5,
     low_pass_alpha=0.5,
 )
 
