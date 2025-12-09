@@ -72,6 +72,7 @@ class MotionEnvArgs(LeggedRobotEnvArgs):
     terminate_after_error: dict[str, list[float | list[float]]] = {}
     adaptive_termination_ratio: None | float = None
 
+    deviation_thresholds: dict[str, float] = {}
     observed_steps: dict[str, list[int]] = {}
 
     reset_to_default_pose_ratio: float = 0.1

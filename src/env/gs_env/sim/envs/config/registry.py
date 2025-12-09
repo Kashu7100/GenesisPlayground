@@ -249,7 +249,8 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
         "dr_obs",
         "base_lin_vel_local",
         "tracking_link_pos_local_yaw",
-        "foot_contact_weighted",
+        "foot_contact_force",
+        "ref_foot_contact_weighted",
     ],
     critic_obs_terms=[
         "last_action",
@@ -278,7 +279,8 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
         "dr_obs",
         "base_lin_vel_local",
         "tracking_link_pos_local_yaw",
-        "foot_contact_weighted",
+        "foot_contact_force",
+        "ref_foot_contact_weighted",
     ],
     reset_yaw_range=(-0.15, 0.15),
     terminate_after_collision_on=[
@@ -328,21 +330,40 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
         # "foot_contact_force_error": [500.0, [50.0, 500.0]],
     },
     adaptive_termination_ratio=None,
-    motion_file=None,
-    observed_steps={
-        "base_pos": [1, 2, 3, 4, 5, 6, 7, 8],
-        "base_quat": [1, 2, 3, 4, 5, 6, 7, 8],
-        "base_lin_vel": [1, 2, 3, 4, 5, 6, 7, 8],
-        "base_ang_vel": [1, 2, 3, 4, 5, 6, 7, 8],
-        "base_ang_vel_local": [1, 2, 3, 4, 5, 6, 7, 8],
-        "dof_pos": [1, 2, 3],
-        "dof_vel": [1, 2, 3],
-        "link_pos_local": [1, 2, 3],
-        "link_quat_local": [1, 2, 3],
-        "link_lin_vel": [1, 2, 3],
-        "link_ang_vel": [1, 2, 3],
-        "foot_contact": [1, 2, 3, 4, 5, 6, 7, 8],
+    deviation_thresholds={
+        "base_pos_error": 0.3,
+        "base_quat": 0.4,
+        "base_lin_vel": 2.0,
     },
+    observed_steps={
+        "base_pos": [1, 2, 3, 4, 6, 8, 12, 16, 24, 32],
+        "base_quat": [1, 2, 3, 4, 6, 8, 12, 16, 24, 32],
+        "base_lin_vel": [1, 2, 3, 4, 6, 8, 12, 16, 24, 32],
+        "base_ang_vel": [1, 2, 3, 4, 6, 8, 12, 16, 24, 32],
+        "base_ang_vel_local": [
+            1,
+        ],
+        "dof_pos": [
+            1,
+        ],
+        "dof_vel": [
+            1,
+        ],
+        "link_pos_local": [
+            1,
+        ],
+        "link_quat_local": [
+            1,
+        ],
+        "link_lin_vel": [
+            1,
+        ],
+        "link_ang_vel": [
+            1,
+        ],
+        "foot_contact": [1, 2, 3, 4, 6, 8, 12, 16, 24, 32],
+    },
+    motion_file=None,
 )
 
 
@@ -431,7 +452,8 @@ EnvArgsRegistry["g1_motion"] = MotionEnvArgs(
         "dr_obs",
         "base_lin_vel_local",
         "tracking_link_pos_local_yaw",
-        "foot_contact_weighted",
+        "foot_contact_force",
+        "ref_foot_contact_weighted",
     ],
     reset_yaw_range=(-0.15, 0.15),
     terminate_after_collision_on=[
@@ -481,7 +503,10 @@ EnvArgsRegistry["g1_motion"] = MotionEnvArgs(
         # "foot_contact_force_error": [500.0, [50.0, 500.0]],
     },
     adaptive_termination_ratio=None,
-    motion_file=None,
+    deviation_thresholds={
+        "base_quat": 1.0,
+        "base_lin_vel": 2.0,
+    },
     observed_steps={
         "base_pos": [
             1,
@@ -507,6 +532,7 @@ EnvArgsRegistry["g1_motion"] = MotionEnvArgs(
             1,
         ],
     },
+    motion_file=None,
 )
 
 
