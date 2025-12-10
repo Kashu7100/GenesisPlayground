@@ -339,3 +339,24 @@ class StandStillReward(RewardTerm):
         rew = torch.exp(-dof_error * 2)
         rew[commands.norm(dim=1) > 0.1] = 0.0
         return rew
+
+
+class FeetSlidePenalty(RewardTerm):
+    """
+    Penalize the feet slide.
+
+    Args:
+        feet_height: Feet height tensor of shape (B, 2) where B is the batch size.
+        foot_contact: Feet contact tensor of shape (B, 2) where B is the batch size.
+        feet_velocity: Feet velocity tensor of shape (B, 2, 3) where B is the batch size.
+    """
+
+    required_keys = ("feet_height", "foot_contact", "feet_velocity")
+    feet_slide_height_threshold = 0.1
+
+    def _compute(
+        self, feet_height: torch.Tensor, foot_contact: torch.Tensor, feet_velocity: torch.Tensor
+    ) -> torch.Tensor:  # type: ignore
+        foot_contact_mask = foot_contact + (feet_height < self.feet_slide_height_threshold).float()
+        feet_vel_xy = torch.square(feet_velocity[:, :, :2]).sum(dim=-1)
+        return -torch.sum(feet_vel_xy * foot_contact_mask, dim=-1)
