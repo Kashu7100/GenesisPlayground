@@ -8,3 +8,8 @@ DEFAULT_MLP = MLPConfig(
     hidden_dims=(256, 256, 128),
     activation=ActivationType.RELU,
 )
+
+LOCOMOTION_MLP = MLPConfig(
+    hidden_dims=(512, 256, 128),
+    activation=ActivationType.RELU,
+)

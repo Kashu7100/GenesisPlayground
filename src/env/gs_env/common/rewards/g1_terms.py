@@ -482,9 +482,9 @@ class TrackingLinkAngVelReward(RewardTerm):
         return -tracking_link_ang_vel_error * deviation_buf
 
 
-class TrackingFootContactReward(RewardTerm):
+class FootContactReward(RewardTerm):
     """
-    Reward the tracking foot contact.
+    Reward the foot contact.
 
     Args:
         foot_contact_weighted: Foot contact weighted tensor of shape (B, N) where B is the batch size and N is the number of feet.

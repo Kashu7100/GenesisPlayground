@@ -401,8 +401,11 @@ class MotionEnv(LeggedRobotEnv):
         termination_dict = {}
 
         time_out_buf = self.get_truncated()
-        motion_end_buf = self.motion_times + self.dt > self._motion_lengths
         reset_buf = time_out_buf.clone()
+
+        # motion_end is not timeout (causes value function explosion)
+        motion_end_buf = self.motion_times + self.dt > self._motion_lengths
+        reset_buf |= motion_end_buf
 
         contact_force_mask = torch.any(
             torch.norm(self.link_contact_forces[:, self._terminate_link_idx_local, :], dim=-1)
@@ -489,15 +492,6 @@ class MotionEnv(LeggedRobotEnv):
         self._extra_info["info"].update(error_mean_dict)
 
         return error_dict
-
-    def get_truncated(self) -> torch.Tensor:
-        if self._eval_mode:
-            self._max_sim_time = float("inf")
-        time_out_buf = self.time_since_reset > self._max_sim_time
-        if not self._eval_mode:
-            time_out_buf |= self.motion_times + self.dt > self._motion_lengths
-        self.time_out_buf[:] = time_out_buf
-        return time_out_buf
 
     def _update_terminate_error(self, error_mask: dict[str, torch.Tensor]) -> None:
         for error_name in self._terminate_after_error.keys():

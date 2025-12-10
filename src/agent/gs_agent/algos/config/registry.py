@@ -7,7 +7,7 @@ from gs_agent.algos.config.schema import (
     OptimizerType,
     PPOArgs,
 )
-from gs_agent.modules.config.registry import DEFAULT_MLP
+from gs_agent.modules.config.registry import DEFAULT_MLP, LOCOMOTION_MLP
 
 # default PPO config
 PPO_DEFAULT = PPOArgs(
@@ -116,8 +116,8 @@ PPO_WALKING_MLP = PPOArgs(
 
 # goal reaching PPO config
 PPO_TELEOP_MLP = PPOArgs(
-    policy_backbone=DEFAULT_MLP,
-    critic_backbone=DEFAULT_MLP,
+    policy_backbone=LOCOMOTION_MLP,
+    critic_backbone=LOCOMOTION_MLP,
     lr=3e-4,
     lr_type=LearningRateType.ADAPTIVE,
     lr_adaptive_factor=1.5,
@@ -140,8 +140,8 @@ PPO_TELEOP_MLP = PPOArgs(
 
 # BC motion config (for distilling from g1_motion_teacher to g1_motion)
 BC_MOTION_MLP = BCArgs(
-    policy_backbone=DEFAULT_MLP,
-    teacher_backbone=DEFAULT_MLP,
+    policy_backbone=LOCOMOTION_MLP,
+    teacher_backbone=LOCOMOTION_MLP,
     lr=3e-4,
     teacher_path=Path(""),  # Will be set dynamically
     num_epochs=10,
@@ -156,9 +156,9 @@ BC_MOTION_MLP = BCArgs(
 
 # DAgger motion config (for distilling from g1_motion_teacher to g1_motion with value function)
 DAGGER_MOTION_MLP = DaggerArgs(
-    policy_backbone=DEFAULT_MLP,
-    teacher_backbone=DEFAULT_MLP,
-    critic_backbone=DEFAULT_MLP,
+    policy_backbone=LOCOMOTION_MLP,
+    teacher_backbone=LOCOMOTION_MLP,
+    critic_backbone=LOCOMOTION_MLP,
     lr=3e-4,
     value_lr=None,
     gamma=0.99,

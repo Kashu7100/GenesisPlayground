@@ -192,7 +192,7 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
         "TrackingLinkQuatReward": 1.0,
         "TrackingLinkLinVelReward": 0.5,
         "TrackingLinkAngVelReward": 0.02,
-        "TrackingFootContactReward": 30.0,
+        "FootContactReward": 30.0,
         ### Regularization ###
         "TorquePenalty": 0.0001,
         "ActionRatePenalty": 0.3,
@@ -202,7 +202,7 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
         "BodyAngVelXYPenalty": 1.0,
         "WaistVelPenalty": 0.5,
         # "G1FeetContactForceLimitPenalty": 1e-4,
-        "MotionFeetAirTimePenalty": 200.0,
+        # "MotionFeetAirTimePenalty": 200.0,
         "G1FeetSlidePenalty": 5.0,
     },
     img_resolution=(480, 270),
