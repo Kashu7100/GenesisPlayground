@@ -192,7 +192,7 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
         "TrackingLinkQuatReward": 1.0,
         "TrackingLinkLinVelReward": 0.5,
         "TrackingLinkAngVelReward": 0.02,
-        "TrackingFootContactReward": 1.0,
+        "TrackingFootContactReward": 30.0,
         ### Regularization ###
         "TorquePenalty": 0.0001,
         "ActionRatePenalty": 0.3,
@@ -249,7 +249,7 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
         "dr_obs",
         "base_lin_vel_local",
         "tracking_link_pos_local_yaw",
-        "foot_contact_force",
+        "foot_contact_weighted",
         "ref_foot_contact_weighted",
     ],
     critic_obs_terms=[
@@ -279,7 +279,7 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
         "dr_obs",
         "base_lin_vel_local",
         "tracking_link_pos_local_yaw",
-        "foot_contact_force",
+        "foot_contact_weighted",
         "ref_foot_contact_weighted",
     ],
     reset_yaw_range=(-0.15, 0.15),
@@ -331,8 +331,8 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
     },
     adaptive_termination_ratio=None,
     deviation_thresholds={
-        "base_pos_error": 0.3,
-        "base_quat_error": 0.4,
+        "base_pos_error": 0.5,
+        "base_quat_error": 1.0,
         "base_lin_vel_error": 2.0,
     },
     observed_steps={
@@ -452,7 +452,7 @@ EnvArgsRegistry["g1_motion"] = MotionEnvArgs(
         "dr_obs",
         "base_lin_vel_local",
         "tracking_link_pos_local_yaw",
-        "foot_contact_force",
+        "foot_contact_weighted",
         "ref_foot_contact_weighted",
     ],
     reset_yaw_range=(-0.15, 0.15),

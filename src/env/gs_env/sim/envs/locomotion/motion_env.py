@@ -288,7 +288,6 @@ class MotionEnv(LeggedRobotEnv):
             "base_quat_error",
             "dof_pos_error",
             "tracking_link_pos_error",
-            "foot_contact_force_error",
         ]
         self._terminate_after_error = {}
         self._min_terminate_after_error = {}
@@ -464,9 +463,9 @@ class MotionEnv(LeggedRobotEnv):
         tracking_link_pos_error = torch.norm(
             self.tracking_link_pos_local_yaw - self.ref_tracking_link_pos_local_yaw, dim=-1
         ).mean(dim=-1)
-        foot_contact_force_error = (self.foot_contact_force * (1 - self.ref_foot_contact)).sum(
-            dim=-1
-        )
+        foot_contact_weighted_error = (
+            self.foot_contact_weighted * (1 - self.ref_foot_contact)
+        ).sum(dim=-1)
 
         error_dict = {}
         error_dict["base_pos_error"] = base_pos_error.clone()
@@ -476,7 +475,7 @@ class MotionEnv(LeggedRobotEnv):
         error_dict["base_ang_vel_error"] = base_ang_vel_error.clone()
         error_dict["dof_pos_error"] = dof_pos_error.clone()
         error_dict["tracking_link_pos_error"] = tracking_link_pos_error.clone()
-        error_dict["foot_contact_force_error"] = foot_contact_force_error.clone()
+        error_dict["foot_contact_weighted_error"] = foot_contact_weighted_error.clone()
 
         self.deviation_buf = torch.ones_like(self.deviation_buf)
         for key in self.deviation_thresholds.keys():
@@ -610,10 +609,7 @@ class MotionEnv(LeggedRobotEnv):
         assert self._motion_lib is not None
         n = len(envs_idx)
         motion_ids = self._motion_lib.sample_motion_ids(n)
-        motion_times = (
-            self._motion_lib.sample_motion_times(motion_ids)
-            * self._args.reset_to_motion_range_ratio
-        )
+        motion_times = self._motion_lib.sample_motion_times(motion_ids)
         self._motion_ids[envs_idx] = motion_ids
         self._motion_time_offsets[envs_idx] = motion_times
         self._motion_lengths[envs_idx] = self._motion_lib.get_motion_length(motion_ids)

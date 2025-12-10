@@ -76,4 +76,3 @@ class MotionEnvArgs(LeggedRobotEnvArgs):
     observed_steps: dict[str, list[int]] = {}
 
     reset_to_default_pose_ratio: float = 0.1
-    reset_to_motion_range_ratio: float = 0.9

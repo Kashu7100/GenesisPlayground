@@ -315,7 +315,7 @@ class MotionLib:
 
     def sample_motion_times(self, motion_ids: torch.Tensor) -> torch.Tensor:
         # Sample integer steps uniformly and convert to times by dividing by fps
-        n_steps = self._motion_num_frames[motion_ids] - 1
+        n_steps = self._motion_num_frames[motion_ids] - 1 - int(self.fps)
         phase = torch.rand(motion_ids.shape, device=self._device)
         steps = torch.round(phase * n_steps.float()).long()
         steps = torch.clamp(steps, min=0)  # safety
