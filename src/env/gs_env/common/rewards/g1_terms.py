@@ -15,6 +15,7 @@ from .leggedrobot_terms import (
     FeetAirTimeReward,  # noqa
     FeetContactForceLimitPenalty,
     FeetHeightPenalty,
+    FeetSlidePenalty,  # noqa
     FeetZVelocityPenalty,  # noqa
     LinVelXYReward,  # noqa
     LinVelZPenalty,  # noqa
