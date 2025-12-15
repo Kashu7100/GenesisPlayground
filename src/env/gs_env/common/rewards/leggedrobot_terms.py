@@ -61,6 +61,34 @@ class AngVelXYPenalty(RewardTerm):
         return -torch.sum(torch.square(base_ang_vel[:, :2]), dim=-1)
 
 
+class BodyLinVelZPenalty(RewardTerm):
+    """
+    Penalize the linear velocity in the Z direction.
+
+    Args:
+        body_lin_vel: Linear velocity tensor of shape (B, 3) where B is the batch size.
+    """
+
+    required_keys = ("body_lin_vel",)
+
+    def _compute(self, body_lin_vel: torch.Tensor) -> torch.Tensor:  # type: ignore
+        return -torch.square(body_lin_vel[:, 2])
+
+
+class BodyAngVelXYPenalty(RewardTerm):
+    """
+    Penalize the angular velocity in the X and Y directions.
+
+    Args:
+        body_ang_vel: Angular velocity tensor of shape (B, 3) where B is the batch size.
+    """
+
+    required_keys = ("body_ang_vel",)
+
+    def _compute(self, body_ang_vel: torch.Tensor) -> torch.Tensor:  # type: ignore
+        return -torch.sum(torch.square(body_ang_vel[:, :2]), dim=-1)
+
+
 class OrientationPenalty(RewardTerm):
     """
     Penalize the orientation deviation from upright.
@@ -196,19 +224,17 @@ class FeetAirTimePenalty(RewardTerm):
     Args:
         feet_air_time: Feet air time tensor of shape (B, 2) where B is the batch size.
         feet_first_contact: Feet first contact tensor of shape (B, 2) where B is the batch size.
-        commands: Commands tensor of shape (B, 3) where B is the batch size.
     """
 
-    required_keys = ("feet_first_contact", "feet_air_time", "commands")
+    required_keys = ("feet_first_contact", "feet_air_time")
     target_feet_air_time = 0.4
 
     def _compute(
-        self, feet_first_contact: torch.Tensor, feet_air_time: torch.Tensor, commands: torch.Tensor
+        self, feet_first_contact: torch.Tensor, feet_air_time: torch.Tensor
     ) -> torch.Tensor:  # type: ignore
         pen_air_time = torch.sum(
             torch.abs(feet_air_time - self.target_feet_air_time) * feet_first_contact, dim=1
         )
-        pen_air_time *= torch.norm(commands, dim=1) > 0.1
         return -pen_air_time
 
 
@@ -252,13 +278,13 @@ class StandStillFeetContactPenalty(RewardTerm):
     Penalize the uneven feet contact force when stand still.
 
     Args:
-        feet_contact_force: Feet contact force tensor of shape (B, N) where B is the batch size and N is the number of feet.
+        foot_contact_force: Feet contact force tensor of shape (B, N) where B is the batch size and N is the number of feet.
     """
 
-    required_keys = ("feet_contact_force", "commands")
+    required_keys = ("foot_contact_force", "commands")
 
-    def _compute(self, feet_contact_force: torch.Tensor, commands: torch.Tensor) -> torch.Tensor:  # type: ignore
-        contact_force_diff = feet_contact_force - feet_contact_force.mean(dim=1, keepdim=True)
+    def _compute(self, foot_contact_force: torch.Tensor, commands: torch.Tensor) -> torch.Tensor:  # type: ignore
+        contact_force_diff = foot_contact_force - foot_contact_force.mean(dim=1, keepdim=True)
         contact_force_diff = torch.square(contact_force_diff).sum(dim=1)
         contact_force_diff *= torch.norm(commands, dim=1) < 0.1
         return -contact_force_diff
@@ -269,12 +295,68 @@ class FeetContactForceLimitPenalty(RewardTerm):
     Penalize the feet contact force limit violations.
 
     Args:
-        feet_contact_force: Feet contact force tensor of shape (B, N) where B is the batch size and N is the number of feet.
+        foot_contact_force: Feet contact force tensor of shape (B, N) where B is the batch size and N is the number of feet.
     """
 
-    required_keys = ("feet_contact_force",)
+    required_keys = ("foot_contact_force",)
     contact_force_limit: float = 0.0
 
-    def _compute(self, feet_contact_force: torch.Tensor) -> torch.Tensor:  # type: ignore
-        out_of_limits = (feet_contact_force - self.contact_force_limit).clip(min=0.0).square()
+    def _compute(self, foot_contact_force: torch.Tensor) -> torch.Tensor:  # type: ignore
+        out_of_limits = (foot_contact_force - self.contact_force_limit).clip(min=0.0).square()
         return -torch.sum(out_of_limits, dim=1)
+
+
+class DofVelPenalty(RewardTerm):
+    """
+    Penalize the dof velocities.
+
+    Args:
+        dof_vel: dof_vel tensor of shape (B, D) where B is the batch size and D is the number of DoFs.
+    """
+
+    required_keys = ("dof_vel",)
+
+    def _compute(self, dof_vel: torch.Tensor) -> torch.Tensor:  # type: ignore
+        return -torch.sum(torch.square(dof_vel), dim=-1)
+
+
+class StandStillReward(RewardTerm):
+    """
+    Reward standing still by low joint torques.
+
+    Args:
+        default_dof_pos: default_dof_pos tensor of shape (B, D) where B is the batch size and D is the number of DoFs.
+        dof_pos: dof_pos tensor of shape (B, D) where B is the batch size and D is the number of DoFs.
+        commands: Commands tensor of shape (B, 3) where B is the batch size.
+    """
+
+    required_keys = ("default_dof_pos", "dof_pos", "commands")
+
+    def _compute(
+        self, default_dof_pos: torch.Tensor, dof_pos: torch.Tensor, commands: torch.Tensor
+    ) -> torch.Tensor:  # type: ignore
+        dof_error = torch.norm(dof_pos - default_dof_pos, dim=1)
+        rew = torch.exp(-dof_error * 2)
+        rew[commands.norm(dim=1) > 0.1] = 0.0
+        return rew
+
+
+class FeetSlidePenalty(RewardTerm):
+    """
+    Penalize the feet slide.
+
+    Args:
+        feet_height: Feet height tensor of shape (B, 2) where B is the batch size.
+        foot_contact: Feet contact tensor of shape (B, 2) where B is the batch size.
+        feet_velocity: Feet velocity tensor of shape (B, 2, 3) where B is the batch size.
+    """
+
+    required_keys = ("feet_height", "foot_contact", "feet_velocity")
+    feet_slide_height_threshold = 0.1
+
+    def _compute(
+        self, feet_height: torch.Tensor, foot_contact: torch.Tensor, feet_velocity: torch.Tensor
+    ) -> torch.Tensor:  # type: ignore
+        foot_contact_mask = foot_contact + (feet_height < self.feet_slide_height_threshold).float()
+        feet_vel_xy = torch.square(feet_velocity[:, :, :2]).sum(dim=-1)
+        return -torch.sum(feet_vel_xy * foot_contact_mask, dim=-1)

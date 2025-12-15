@@ -7,6 +7,7 @@ from .leggedrobot_terms import (
     AngVelZReward,  # noqa
     BaseHeightPenalty,
     DofPosLimitPenalty,  # noqa
+    DofVelPenalty,  # noqa
     FeetAirTimePenalty,  # noqa
     FeetAirTimeReward,  # noqa
     FeetContactForceLimitPenalty,
@@ -24,7 +25,7 @@ from .reward_terms import RewardTerm
 
 ### ---- Reward Terms ---- ###
 class G1BaseHeightPenalty(BaseHeightPenalty):
-    target_height = 0.75
+    target_height = 1.0
 
 
 class UpperBodyDofPenalty(RewardTerm):
@@ -124,13 +125,13 @@ class G1FeetContactForcePenalty(RewardTerm):
     Penalize the feet contact force.
 
     Args:
-        feet_contact_force: Feet contact force tensor of shape (B, D) where B is the batch size and D is the number of DoFs.
+        foot_contact_force: Feet contact force tensor of shape (B, D) where B is the batch size and D is the number of DoFs.
     """
 
-    required_keys = ("feet_contact_force", "commands")
+    required_keys = ("foot_contact_force", "commands")
 
-    def _compute(self, feet_contact_force: torch.Tensor, commands: torch.Tensor) -> torch.Tensor:  # type: ignore
-        contact_force_diff = 200 - feet_contact_force.max(dim=-1).values.clamp(max=200)
+    def _compute(self, foot_contact_force: torch.Tensor, commands: torch.Tensor) -> torch.Tensor:  # type: ignore
+        contact_force_diff = 200 - foot_contact_force.max(dim=-1).values.clamp(max=200)
         contact_force_diff *= torch.norm(commands, dim=1) > 0.1
         return -torch.square(contact_force_diff / 200)
 

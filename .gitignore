@@ -2,9 +2,10 @@
 __pycache__
 *.egg-info
 logs
-
-cyclonedds
-
-unitree_sdk2_python
-
+unitree_sdk2_python/
 config/**/*.pkl
+gif
+motion/
+cyclonedds/
+*.sh
+*.png

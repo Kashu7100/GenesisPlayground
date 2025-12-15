@@ -59,6 +59,30 @@ def quat_to_rotmat(q: torch.Tensor) -> torch.Tensor:
 
 
 @torch.jit.script
+def rotmat_to_rotation_6D(rot: torch.Tensor) -> torch.Tensor:
+    """
+    Converts rotation matrix/matrices to the 6D rotation representation.
+    Input:
+        rot: Tensor of shape [..., 3, 3] rotation matrix.
+    Output:
+        Rotation 6D tensor of shape [..., 6], formed by concatenating the first two columns.
+    """
+    return torch.cat([rot[..., :, 0], rot[..., :, 1]], dim=-1)
+
+
+@torch.jit.script
+def quat_to_rotation_6D(q: torch.Tensor) -> torch.Tensor:
+    """
+    Converts quaternions to rotation 6D representation.
+    Input:
+        q: Tensor of shape [..., 4] where the quaternion is in (w, x, y, z) format.
+    Output:
+        Rotation 6D representation of shape [..., 6].
+    """
+    return rotmat_to_rotation_6D(quat_to_rotmat(q))
+
+
+@torch.jit.script
 def quat_to_euler(q: torch.Tensor) -> torch.Tensor:  # xyz
     """Convert quaternions to Euler angles (roll, pitch, yaw).
     Args:
@@ -89,6 +113,38 @@ def quat_to_euler(q: torch.Tensor) -> torch.Tensor:  # xyz
     yaw = torch.atan2(siny_cosp, cosy_cosp)
 
     return torch.stack([roll, pitch, yaw], dim=-1)
+
+
+@torch.jit.script
+def quat_to_angle_axis(quat: torch.Tensor, eps: float = 1.0e-6) -> torch.Tensor:
+    """Convert rotations given as quaternions to axis/angle.
+
+    Args:
+        quat: The quaternion orientation in (w, x, y, z). Shape is (..., 4).
+        eps: The tolerance for Taylor approximation. Defaults to 1.0e-6.
+
+    Returns:
+        Rotations given as a vector in axis angle form. Shape is (..., 3).
+        The vector's magnitude is the angle turned anti-clockwise in radians around the vector's direction.
+
+    Reference:
+        https://github.com/facebookresearch/pytorch3d/blob/main/pytorch3d/transforms/rotation_conversions.py#L526-L554
+    """
+    # Modified to take in quat as [q_w, q_x, q_y, q_z]
+    # Quaternion is [q_w, q_x, q_y, q_z] = [cos(theta/2), n_x * sin(theta/2), n_y * sin(theta/2), n_z * sin(theta/2)]
+    # Axis-angle is [a_x, a_y, a_z] = [theta * n_x, theta * n_y, theta * n_z]
+    # Thus, axis-angle is [q_x, q_y, q_z] / (sin(theta/2) / theta)
+    # When theta = 0, (sin(theta/2) / theta) is undefined
+    # However, as theta --> 0, we can use the Taylor approximation 1/2 - theta^2 / 48
+    quat = quat * (1.0 - 2.0 * (quat[..., 0:1] < 0.0))
+    mag = torch.linalg.norm(quat[..., 1:], dim=-1)
+    half_angle = torch.atan2(mag, quat[..., 0])
+    angle = 2.0 * half_angle
+    # check whether to apply Taylor approximation
+    sin_half_angles_over_angles = torch.where(
+        angle.abs() > eps, torch.sin(half_angle) / angle, 0.5 - angle * angle / 48
+    )
+    return quat[..., 1:4] / sin_half_angles_over_angles.unsqueeze(-1)
 
 
 @torch.jit.script
@@ -242,35 +298,19 @@ def quat_inv(q: torch.Tensor) -> torch.Tensor:
 
 
 @torch.jit.script
-def axis_angle_from_quat(quat: torch.Tensor, eps: float = 1.0e-6) -> torch.Tensor:
-    """Convert rotations given as quaternions to axis/angle.
+def quat_diff(q1: torch.Tensor, q2: torch.Tensor) -> torch.Tensor:
+    """
+    Compute the difference between two quaternions.
 
     Args:
-        quat: The quaternion orientation in (w, x, y, z). Shape is (..., 4).
-        eps: The tolerance for Taylor approximation. Defaults to 1.0e-6.
+        q1: The first quaternion in (w, x, y, z). Shape is (..., 4).
+        q2: The second quaternion in (w, x, y, z). Shape is (..., 4).
 
     Returns:
-        Rotations given as a vector in axis angle form. Shape is (..., 3).
-        The vector's magnitude is the angle turned anti-clockwise in radians around the vector's direction.
-
-    Reference:
-        https://github.com/facebookresearch/pytorch3d/blob/main/pytorch3d/transforms/rotation_conversions.py#L526-L554
+        The difference between the two quaternions. Shape is (..., 4).
     """
-    # Modified to take in quat as [q_w, q_x, q_y, q_z]
-    # Quaternion is [q_w, q_x, q_y, q_z] = [cos(theta/2), n_x * sin(theta/2), n_y * sin(theta/2), n_z * sin(theta/2)]
-    # Axis-angle is [a_x, a_y, a_z] = [theta * n_x, theta * n_y, theta * n_z]
-    # Thus, axis-angle is [q_x, q_y, q_z] / (sin(theta/2) / theta)
-    # When theta = 0, (sin(theta/2) / theta) is undefined
-    # However, as theta --> 0, we can use the Taylor approximation 1/2 - theta^2 / 48
-    quat = quat * (1.0 - 2.0 * (quat[..., 0:1] < 0.0))
-    mag = torch.linalg.norm(quat[..., 1:], dim=-1)
-    half_angle = torch.atan2(mag, quat[..., 0])
-    angle = 2.0 * half_angle
-    # check whether to apply Taylor approximation
-    sin_half_angles_over_angles = torch.where(
-        angle.abs() > eps, torch.sin(half_angle) / angle, 0.5 - angle * angle / 48
-    )
-    return quat[..., 1:4] / sin_half_angles_over_angles.unsqueeze(-1)
+    dq = quat_mul(q2, quat_conjugate(q1))
+    return dq
 
 
 @torch.jit.script
@@ -285,7 +325,44 @@ def quat_error_magnitude(q1: torch.Tensor, q2: torch.Tensor) -> torch.Tensor:
         Angular error between input quaternions in radians.
     """
     quat_diff = quat_mul(q1, quat_conjugate(q2))
-    return torch.norm(axis_angle_from_quat(quat_diff), dim=-1)
+    return torch.norm(quat_to_angle_axis(quat_diff), dim=-1)
+
+
+@torch.jit.script
+def slerp(q1: torch.Tensor, q2: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+    """
+    Spherical linear interpolation between two quaternions.
+
+    Args:
+        q1: The first quaternion in (w, x, y, z). Shape is (..., 4).
+        q2: The second quaternion in (w, x, y, z). Shape is (..., 4).
+        t: The interpolation factor. Shape is (...,).
+
+    Returns:
+        The interpolated quaternion in (w, x, y, z). Shape is (..., 4).
+    """
+    assert len(t.shape) == len(q1.shape) - 1, "Shape of t must be (...,)"
+    cos_half_theta = torch.sum(q1 * q2, dim=-1)
+
+    neg_mask = cos_half_theta < 0
+    q2 = torch.where(neg_mask.unsqueeze(-1), -q2, q2)
+
+    cos_half_theta = torch.abs(cos_half_theta)
+    cos_half_theta = torch.unsqueeze(cos_half_theta, dim=-1)
+
+    half_theta = torch.acos(cos_half_theta)
+    sin_half_theta = torch.sqrt(1.0 - cos_half_theta * cos_half_theta)
+
+    t = t.unsqueeze(-1)
+    ratioA = torch.sin((1 - t) * half_theta) / sin_half_theta
+    ratioB = torch.sin(t * half_theta) / sin_half_theta
+
+    new_q = ratioA * q1 + ratioB * q2
+
+    new_q = torch.where(torch.abs(sin_half_theta) < 0.001, 0.5 * q1 + 0.5 * q2, new_q)
+    new_q = torch.where(torch.abs(cos_half_theta) >= 1, q1, new_q)
+
+    return new_q
 
 
 @torch.jit.script
@@ -467,7 +544,7 @@ def compute_pose_error(
         return pos_error, quat_error
     elif rot_error_type == "axis_angle":
         # Convert to axis-angle error
-        axis_angle_error = axis_angle_from_quat(quat_error)
+        axis_angle_error = quat_to_angle_axis(quat_error)
         return pos_error, axis_angle_error
     else:
         raise ValueError(

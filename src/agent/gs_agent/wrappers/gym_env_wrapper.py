@@ -44,8 +44,10 @@ class GymEnvWrapper(BaseEnvWrapper):
         truncated_batch = torch.as_tensor([[truncated]], device=self.device)
         return self._curr_obs, reward_batch, terminated_batch, truncated_batch, info
 
-    def get_observations(self) -> torch.Tensor:
-        return self._curr_obs
+    def get_observations(self, obs_args: Any = None) -> tuple[torch.Tensor, torch.Tensor]:
+        """Get observations. Returns both actor and critic observations (same for gym).
+        obs_args is ignored for gym environments."""
+        return self._curr_obs, self._curr_obs
 
     @property
     def action_dim(self) -> int:

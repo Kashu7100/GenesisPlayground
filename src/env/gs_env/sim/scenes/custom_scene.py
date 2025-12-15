@@ -4,10 +4,12 @@ import genesis as gs
 import torch
 
 from gs_env.common.bases.base_scene import BaseSimScene
+from gs_env.common.utils.math_utils import quat_apply, quat_from_euler, quat_mul
 from gs_env.sim.scenes.config.schema import CustomSceneArgs
+from gs_env.sim.scenes.flat_scene import FlatScene
 
 
-class CustomScene(BaseSimScene):
+class CustomScene(FlatScene):
     def __init__(
         self,
         num_envs: int,
@@ -19,7 +21,7 @@ class CustomScene(BaseSimScene):
         env_spacing: tuple[float, float] = (1.0, 1.0),
         img_resolution: tuple[int, int] | None = None,
     ) -> None:
-        super().__init__()
+        BaseSimScene.__init__(self)
         self._device = device
         #
         # _renderer = (
@@ -41,12 +43,14 @@ class CustomScene(BaseSimScene):
             show_viewer=show_viewer,
             # renderer=_renderer,
         )
+        self._gravity = abs(self._scene.gravity[2].item())
         #
         if not args.remove_ground:
             self._plane = self._scene.add_entity(
                 gs.morphs.Plane(normal=args.normal),
             )
         self._objects = {}
+        self._objects_offset = {}
         for object in args.objects:
             obj_type: str = object.get("type", "")
             if obj_type.lower() in ["obj", "stl", "ply"]:
@@ -109,6 +113,15 @@ class CustomScene(BaseSimScene):
             else:
                 raise ValueError(f"Unsupported object type: {obj_type}")
             self._objects[object["name"]] = obj
+            pos_offset = object.get("pos_offset", (0.0, 0.0, 0.0))
+            rot_offset = torch.tensor(
+                object.get("rot_offset", (0.0, 0.0, 0.0)), device=self._device
+            )
+            quat_offset = quat_from_euler(rot_offset)
+            self._objects_offset[object["name"]] = (
+                torch.tensor(pos_offset, device=self._device)[None, :].repeat(num_envs, 1),
+                quat_offset[None, :].repeat(num_envs, 1),
+            )
             print(f"Added object: {object['name']}")
 
         #
@@ -117,9 +130,6 @@ class CustomScene(BaseSimScene):
         self._n_envs_per_row = n_envs_per_row
         self._center_envs_at_origin = args.center_envs_at_origin
         self._compile_kernels = args.compile_kernels
-
-    def reset(self, envs_idx: torch.IntTensor) -> None:
-        self._scene.reset(envs_idx=envs_idx)
 
     def set_obj_pose(
         self,
@@ -140,34 +150,13 @@ class CustomScene(BaseSimScene):
                 "Quaternion must be a tensor of shape (num_envs, 4)"
             )
         obj = self._objects[name]
+        pos_offset = quat_apply(quat, self._objects_offset[name][0][envs_idx])
+        quat_offset = quat_mul(quat, self._objects_offset[name][1][envs_idx])
         if pos is not None:
-            obj.set_pos(pos, envs_idx=envs_idx)
+            obj.set_pos(pos + pos_offset, envs_idx=envs_idx)
         if quat is not None:
-            obj.set_quat(quat, envs_idx=envs_idx)
-
-    def __getattr__(self, item: str) -> Any:
-        if hasattr(self._scene, item):
-            return getattr(self._scene, item)
-        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{item}'")
+            obj.set_quat(quat_offset, envs_idx=envs_idx)
 
     @property
-    def scene(self) -> gs.Scene:
-        """Returns the underlying genesis scene."""
-        return self._scene
-
-    @property
-    def env_spacing(self) -> tuple[float, float]:
-        """Returns the spacing between environments."""
-        return self._env_spacing
-
-    @property
-    def n_envs_per_row(self) -> int | None:
-        return self._n_envs_per_row
-
-    @property
-    def center_envs_at_origin(self) -> bool:
-        return self._center_envs_at_origin
-
-    @property
-    def num_envs(self) -> int:
-        return self._num_envs
+    def objects(self) -> dict[str, Any]:
+        return self._objects

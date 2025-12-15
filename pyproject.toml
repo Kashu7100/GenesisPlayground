@@ -45,6 +45,8 @@ line-length = 100
 src = ["."]
 target-version = "py310"
 exclude = [
+  "cyclonedds/docs/manual/_build",
+  "cyclonedds/hooks",
   "src/agent/gs_agent/utils/logger.py",
 ]
 

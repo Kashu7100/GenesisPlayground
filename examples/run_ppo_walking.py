@@ -16,7 +16,7 @@ import gs_env.sim.envs as gs_envs
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from gs_agent.algos.config.registry import PPO_WALKING_MLP
+from gs_agent.algos.config.registry import PPO_WALKING_MLP, PPOArgs
 from gs_agent.algos.ppo import PPO
 from gs_agent.runners.config.registry import RUNNER_WALKING_MLP
 from gs_agent.runners.onpolicy_runner import OnPolicyRunner
@@ -24,7 +24,8 @@ from gs_agent.utils.logger import configure as logger_configure
 from gs_agent.utils.policy_loader import load_latest_model
 from gs_agent.wrappers.gs_env_wrapper import GenesisEnvWrapper
 from gs_env.sim.envs.config.registry import EnvArgsRegistry
-from utils import apply_overrides_generic, config_to_yaml, plot_metric_on_axis
+from gs_env.sim.envs.config.schema import WalkingEnvArgs
+from utils import apply_overrides_generic, config_to_yaml, plot_metric_on_axis, yaml_to_config
 
 
 def create_gs_env(
@@ -33,6 +34,7 @@ def create_gs_env(
     device: str = "cuda",
     args: Any = None,
     eval_mode: bool = False,
+    debug: bool = False,
 ) -> gs_envs.WalkingEnv:
     """Create gym environment wrapper with optional config overrides."""
     if torch.cuda.is_available() and device == "cuda":
@@ -49,17 +51,8 @@ def create_gs_env(
         show_viewer=show_viewer,
         device=device_tensor,  # type: ignore
         eval_mode=eval_mode,
+        debug=debug,
     )
-
-
-def _apply_algo_overrides(cfg: Any, overrides: dict[str, Any] | None) -> Any:
-    """Deep-apply overrides to PPOArgs (and nested models)."""
-    return apply_overrides_generic(cfg, overrides, prefixes=("cfgs.", "ppo.", "algo."))
-
-
-def _apply_runner_overrides(runner_args: Any, overrides: dict[str, Any] | None) -> Any:
-    """Deep-apply overrides to RunnerArgs."""
-    return apply_overrides_generic(runner_args, overrides, prefixes=("cfgs.", "runner."))
 
 
 def create_ppo_runner_from_registry(
@@ -82,9 +75,7 @@ def create_ppo_runner_from_registry(
     # Create PPO runner
     if exp_name is not None:
         # Avoid mutating a frozen Pydantic model; create a copied config with updated save_path
-        runner_args = RUNNER_WALKING_MLP.model_copy(
-            update={"save_path": Path(f"./logs/{exp_name}")}
-        )
+        runner_args = runner_args.model_copy(update={"save_path": Path(f"./logs/{exp_name}")})
     runner = OnPolicyRunner(
         algorithm=ppo,
         runner_args=runner_args,
@@ -100,11 +91,38 @@ def evaluate_policy(
     device: str = "cuda",
     env_args: Any = None,
     algo_cfg: Any = None,
+    debug: bool = False,
 ) -> None:
     """Evaluate the policy."""
     print("=" * 80)
     print("EVALUATION MODE: Disabling domain randomization, observation noise, and random push")
     print("=" * 80)
+
+    # Find the experiment directory without creating a new runner
+    log_pattern = f"logs/{exp_name}/*"
+    log_dirs = glob.glob(log_pattern)
+    if not log_dirs:
+        raise FileNotFoundError(f"No experiment directories found matching pattern: {log_pattern}")
+
+    log_dirs.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+    exp_dir = log_dirs[0]
+    print(f"Loading policy from experiment: {exp_dir}")
+
+    # Load checkpoint - either specific one or latest
+    if num_ckpt is not None:
+        ckpt_path = Path(exp_dir) / "checkpoints" / f"checkpoint_{num_ckpt:04d}.pt"
+        if not ckpt_path.exists():
+            raise FileNotFoundError(f"Checkpoint {ckpt_path} not found")
+    else:
+        ckpt_path = load_latest_model(Path(exp_dir))
+        num_ckpt = int(ckpt_path.stem.split("_")[-1])
+
+    print(f"Loading checkpoint: {ckpt_path}")
+
+    print(f"Loading configs from experiment: {exp_dir}")
+
+    env_args = yaml_to_config(Path(exp_dir) / "configs" / "env_args.yaml", WalkingEnvArgs)
+    algo_cfg = yaml_to_config(Path(exp_dir) / "configs" / "algo_cfg.yaml", PPOArgs)
 
     # Disable domain randomization, obs noise, and random push for evaluation
     # Create a copy of env_args with disabled randomization
@@ -131,27 +149,6 @@ def evaluate_policy(
     )
     env_args = env_args.model_copy(update={"robot_args": robot_args})
 
-    # Find the experiment directory without creating a new runner
-    log_pattern = f"logs/{exp_name}/*"
-    log_dirs = glob.glob(log_pattern)
-    if not log_dirs:
-        raise FileNotFoundError(f"No experiment directories found matching pattern: {log_pattern}")
-
-    log_dirs.sort(key=lambda x: os.path.getmtime(x), reverse=True)
-    exp_dir = log_dirs[0]
-    print(f"Loading policy from experiment: {exp_dir}")
-
-    # Load checkpoint - either specific one or latest
-    if num_ckpt is not None:
-        ckpt_path = Path(exp_dir) / "checkpoints" / f"checkpoint_{num_ckpt:04d}.pt"
-        if not ckpt_path.exists():
-            raise FileNotFoundError(f"Checkpoint {ckpt_path} not found")
-    else:
-        ckpt_path = load_latest_model(Path(exp_dir))
-        num_ckpt = int(ckpt_path.stem.split("_")[-1])
-
-    print(f"Loading checkpoint: {ckpt_path}")
-
     # Create environment for evaluation
     env = create_gs_env(
         show_viewer=show_viewer,
@@ -159,6 +156,7 @@ def evaluate_policy(
         device=device,
         args=env_args,
         eval_mode=True,
+        debug=debug,
     )
 
     wrapped_env = GenesisEnvWrapper(env, device=env.device)
@@ -211,7 +209,7 @@ def evaluate_policy(
         last_action = None
 
         # Reset environment
-        obs, _ = wrapped_env.get_observations()
+        obs, _ = wrapped_env.get_observations()  # Unpack actor and critic obs, use actor for policy
 
         # Create a wrapper that always uses deterministic=True
         class DeterministicWrapper(torch.nn.Module):
@@ -346,7 +344,7 @@ def evaluate_policy(
 
             # Step environment
             obs, reward, terminated, truncated, _ = wrapped_env.step(action)
-            # print(wrapped_env.env.feet_contact_force[0].cpu().numpy())
+            # print(wrapped_env.env.foot_contact_force[0].cpu().numpy())
 
             # Accumulate reward
             total_reward += reward.item()
@@ -365,7 +363,9 @@ def evaluate_policy(
                 # For viewer mode, check termination conditions
                 if terminated.item() or truncated.item():
                     print(f"Episode ended at step {step_count}, Total reward: {total_reward:.2f}")
-                    obs, _ = wrapped_env.get_observations()
+                    obs, _ = (
+                        wrapped_env.get_observations()
+                    )  # Unpack actor and critic obs, use actor for policy
                     total_reward = 0.0
 
         # Stop rendering and save GIF if recording
@@ -400,6 +400,7 @@ def train_policy(
     env_args: Any = None,
     algo_cfg: Any = None,
     runner_args: Any = None,
+    debug: bool = False,
 ) -> None:
     """Train the policy using PPO."""
 
@@ -409,6 +410,7 @@ def train_policy(
         num_envs=num_envs,
         device=device,
         args=env_args,
+        debug=debug,
     )
 
     # Get configuration and runner from registry
@@ -423,7 +425,7 @@ def train_policy(
     if exp_name is not None:
         save_path = Path(f"./logs/{exp_name}")
     else:
-        save_path = RUNNER_WALKING_MLP.save_path
+        save_path = runner_args.save_path
     logger_folder = save_path / datetime.now().strftime("%Y%m%d_%H%M%S")
     logger = logger_configure(
         folder=str(logger_folder),
@@ -447,16 +449,10 @@ def train_policy(
 
     def train() -> None:
         nonlocal runner, logger
-        train_summary_info = {
-            "total_time": 0.0,
-            "total_episodes": 0,
-            "total_steps": 0,
-            "final_reward": 0.0,
-        }
         train_summary_info = runner.train(metric_logger=logger)
         print("Training completed successfully!")
         print(f"Training completed in {train_summary_info['total_time']:.2f} seconds.")
-        print(f"Total episodes: {train_summary_info['total_episodes']}.")
+        print(f"Total iterations: {train_summary_info['total_iterations']}.")
         print(f"Total steps: {train_summary_info['total_steps']}.")
         print(f"Total reward: {train_summary_info['final_reward']:.2f}.")
 
@@ -481,6 +477,7 @@ def main(
     num_ckpt: int | None = None,
     use_wandb: bool = True,
     env_name: str = "g1_walk",
+    debug: bool = False,
     **cfg_overrides: Any,
 ) -> None:
     """Entry point.
@@ -509,8 +506,10 @@ def main(
 
     env_args = EnvArgsRegistry[env_name]
     env_args = apply_overrides_generic(env_args, env_overrides, prefixes=("cfgs.", "env."))
-    algo_cfg = _apply_algo_overrides(PPO_WALKING_MLP, algo_overrides)
-    runner_args = _apply_runner_overrides(RUNNER_WALKING_MLP, runner_overrides)
+    algo_cfg = apply_overrides_generic(PPO_WALKING_MLP, algo_overrides, prefixes=("cfgs.", "algo."))
+    runner_args = apply_overrides_generic(
+        RUNNER_WALKING_MLP, runner_overrides, prefixes=("cfgs.", "runner.")
+    )
 
     if eval:
         # Evaluation mode - don't create runner to avoid creating empty log dir
@@ -523,6 +522,7 @@ def main(
             device=device,
             env_args=env_args,
             algo_cfg=algo_cfg,
+            debug=debug,
         )
     else:
         # Training mode
@@ -536,6 +536,7 @@ def main(
             env_args=env_args,
             algo_cfg=algo_cfg,
             runner_args=runner_args,
+            debug=debug,
         )
 
 

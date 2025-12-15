@@ -73,3 +73,39 @@ class BaseAlgo(ABC):
         Get the inference policy for evaluation.
         """
         ...
+
+    def freeze_actor(self) -> None:  # noqa: B027
+        """
+        Freeze the actor.
+
+        Default implementation does nothing. Subclasses should override this
+        method if they need to implement actor freezing functionality.
+        """
+        pass
+
+    def freeze_critic(self) -> None:  # noqa: B027
+        """
+        Freeze the critic.
+
+        Default implementation does nothing. Subclasses should override this
+        method if they need to implement critic freezing functionality.
+        """
+        pass
+
+    def unfreeze_actor(self) -> None:  # noqa: B027
+        """
+        Unfreeze the actor.
+
+        Default implementation does nothing. Subclasses should override this
+        method if they need to implement actor unfreezing functionality.
+        """
+        pass
+
+    def unfreeze_critic(self) -> None:  # noqa: B027
+        """
+        Unfreeze the critic.
+
+        Default implementation does nothing. Subclasses should override this
+        method if they need to implement critic unfreezing functionality.
+        """
+        pass

@@ -11,6 +11,7 @@ class FlatScene(BaseSimScene):
     def __init__(
         self,
         num_envs: int,
+        device: torch.device,
         args: FlatSceneArgs,
         show_viewer: bool = False,
         show_fps: bool = False,
@@ -19,6 +20,7 @@ class FlatScene(BaseSimScene):
         img_resolution: tuple[int, int] | None = None,
     ) -> None:
         super().__init__()
+        self._device = device
         #
         # _renderer = (
         #     gs.options.renderers.BatchRenderer(
@@ -39,6 +41,7 @@ class FlatScene(BaseSimScene):
             show_viewer=show_viewer,
             # renderer=_renderer,
         )
+        self._gravity = abs(self._scene.gravity[2].item())
         #
         self._plane = self._scene.add_entity(
             gs.morphs.Plane(normal=args.normal),
@@ -62,6 +65,10 @@ class FlatScene(BaseSimScene):
     def scene(self) -> gs.Scene:
         """Returns the underlying genesis scene."""
         return self._scene
+
+    @property
+    def gravity(self) -> float:
+        return self._gravity
 
     @property
     def env_spacing(self) -> tuple[float, float]:

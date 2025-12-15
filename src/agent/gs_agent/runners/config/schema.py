@@ -14,6 +14,8 @@ class RunnerArgs(BaseModel):
     model_config = genesis_pydantic_config(frozen=True)
 
     total_iterations: NonNegativeInt = 1000
+    freeze_actor_iterations: NonNegativeInt = 0
+    freeze_critic_iterations: NonNegativeInt = 0
 
     # Training intervals
     log_interval: NonNegativeInt = 10

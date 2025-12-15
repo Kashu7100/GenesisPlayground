@@ -51,7 +51,12 @@ class PPO(BaseAlgo):
         # Adaptive learning rate tracking
         self._current_lr = cfg.lr
 
-        #
+        self.use_clipped_value_loss = cfg.use_clipped_value_loss
+
+        # Freeze actor and critic
+        self._freeze_actor = False
+        self._freeze_critic = False
+
         self._build_actor_critic()
         self._build_rollouts()
 
@@ -116,6 +121,7 @@ class PPO(BaseAlgo):
         actor_obs, critic_obs = self.env.get_observations()
         termination_buffer = []
         reward_terms_buffer = []
+        info_buffer = []
         with torch.inference_mode():
             # collect rollouts and compute returns & advantages
             for _step in range(num_steps):
@@ -152,7 +158,8 @@ class PPO(BaseAlgo):
                 # Update termination buffer
                 termination_buffer.append(_extra_infos["termination"])
                 reward_terms_buffer.append(_extra_infos["reward_terms"])
-
+                if "info" in _extra_infos:
+                    info_buffer.append(_extra_infos["info"])
                 # Check for episode completions and reset tracking
                 done_mask = terminated.unsqueeze(-1) | truncated.unsqueeze(-1)
                 new_ids = (done_mask > 0).nonzero(as_tuple=False)
@@ -179,6 +186,7 @@ class PPO(BaseAlgo):
         # import ipdb; ipdb.set_trace()
         mean_termination = {}
         mean_reward_terms = {}
+        mean_info = {}
         if len(termination_buffer) > 0:
             for key in termination_buffer[0].keys():
                 terminations = torch.stack([termination[key] for termination in termination_buffer])
@@ -189,11 +197,16 @@ class PPO(BaseAlgo):
                     [reward_term[key] for reward_term in reward_terms_buffer]
                 )
                 mean_reward_terms[key] = reward_terms.mean().item()
+        if len(info_buffer) > 0:
+            for key in info_buffer[0].keys():
+                infos = torch.tensor([info[key] for info in info_buffer])
+                mean_info[key] = infos.mean().item()
         return {
             "mean_reward": mean_reward,
             "mean_ep_len": mean_ep_len,
             "termination": mean_termination,
             "reward_terms": mean_reward_terms,
+            "info": mean_info,
         }
 
     def _train_one_batch(self, mini_batch: dict[GAEBufferKey, torch.Tensor]) -> dict[str, Any]:
@@ -206,6 +219,7 @@ class PPO(BaseAlgo):
         old_sigma = mini_batch[GAEBufferKey.SIGMA]
         advantage = mini_batch[GAEBufferKey.ADVANTAGES]
         returns = mini_batch[GAEBufferKey.RETURNS]
+        target_values = mini_batch[GAEBufferKey.VALUES]
 
         #
         new_log_prob = self._actor.evaluate_log_prob(actor_obs, act)
@@ -242,7 +256,16 @@ class PPO(BaseAlgo):
 
         # Calculate value loss
         values = self._critic(critic_obs)
-        value_loss = (returns - values).pow(2).mean()
+
+        if self.use_clipped_value_loss:
+            clipped_values = target_values + (values - target_values).clamp(
+                -self.cfg.clip_ratio, self.cfg.clip_ratio
+            )
+            value_loss = (values - returns).pow(2)
+            clipped_value_loss = (clipped_values - returns).pow(2)
+            value_loss = torch.max(value_loss, clipped_value_loss).mean()
+        else:
+            value_loss = (returns - values).pow(2).mean()
 
         # Calculate entropy loss
         entropy = self._actor.entropy_on(actor_obs)
@@ -261,8 +284,10 @@ class PPO(BaseAlgo):
         total_loss.backward()
         nn.utils.clip_grad_norm_(self._actor.parameters(), self.cfg.max_grad_norm)
         nn.utils.clip_grad_norm_(self._critic.parameters(), self.cfg.max_grad_norm)
-        self._critic_optimizer.step()
-        self._actor_optimizer.step()
+        if not self._freeze_critic:
+            self._critic_optimizer.step()
+        if not self._freeze_actor:
+            self._actor_optimizer.step()
 
         return {
             "policy_loss": policy_loss.item(),
@@ -295,7 +320,8 @@ class PPO(BaseAlgo):
 
         # Update learning rate adaptively based on KL divergence
         avg_kl_mean = statistics.mean([metrics["kl_mean"] for metrics in train_metrics_list])
-        self._update_learning_rate(avg_kl_mean)
+        if not self._freeze_actor:
+            self._update_learning_rate(avg_kl_mean)
 
         self._rollouts.reset()
 
@@ -332,13 +358,15 @@ class PPO(BaseAlgo):
             },
             "termination": rollout_infos["termination"],
             "reward_terms": rollout_infos["reward_terms"],
+            "info": rollout_infos["info"],
         }
         return iteration_infos
 
     def save(self, path: Path) -> None:
         """Save the algorithm to a file."""
         saved_dict = {
-            "model_state_dict": self._actor.state_dict(),
+            "actor_state_dict": self._actor.state_dict(),
+            "critic_state_dict": self._critic.state_dict(),
             "actor_optimizer_state_dict": self._actor_optimizer.state_dict(),
             "critic_optimizer_state_dict": self._critic_optimizer.state_dict(),
             "iter": self.current_iter,
@@ -348,7 +376,8 @@ class PPO(BaseAlgo):
     def load(self, path: Path, load_optimizer: bool = True) -> None:
         """Load the algorithm from a file."""
         checkpoint = torch.load(path, map_location=self.device)
-        self._actor.load_state_dict(checkpoint["model_state_dict"])
+        self._actor.load_state_dict(checkpoint["actor_state_dict"])
+        self._critic.load_state_dict(checkpoint["critic_state_dict"])
         if load_optimizer:
             self._actor_optimizer.load_state_dict(checkpoint["actor_optimizer_state_dict"])
             self._critic_optimizer.load_state_dict(checkpoint["critic_optimizer_state_dict"])
@@ -369,3 +398,19 @@ class PPO(BaseAlgo):
             self._actor.to(device)
         policy = self._actor
         return policy
+
+    def freeze_actor(self) -> None:
+        """Freeze the actor."""
+        self._freeze_actor = True
+
+    def freeze_critic(self) -> None:
+        """Freeze the critic."""
+        self._freeze_critic = True
+
+    def unfreeze_actor(self) -> None:
+        """Unfreeze the actor."""
+        self._freeze_actor = False
+
+    def unfreeze_critic(self) -> None:
+        """Unfreeze the critic."""
+        self._freeze_critic = False

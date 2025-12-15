@@ -6,6 +6,93 @@ import numpy as np
 import yaml
 
 
+def cross_correlation(
+    a: np.typing.NDArray[Any], b: np.typing.NDArray[Any], allow_flip: bool = False
+) -> float:
+    """
+    Compute the sub-sample cross-correlation lag between two 1D signals a and b.
+    Handles both normal and flipped correlation (max or min peak).
+    Returns lag in samples (positive means b lags behind a).
+    """
+    assert a.ndim == 1 and b.ndim == 1 and len(a) == len(b), (
+        "Inputs must be 1D arrays of the same length"
+    )
+    a = a - np.mean(a)
+    b = b - np.mean(b)
+    corr = np.correlate(a, b, mode="full")
+    lags = np.arange(-len(a) + 1, len(a))
+    overlap = len(a) - np.abs(lags)
+    corr_unbiased = corr / overlap
+    k_max = np.argmax(corr)
+    k_min = np.argmin(corr)
+    k_peak = k_min if abs(corr[k_min]) > abs(corr[k_max]) and allow_flip else k_max
+    lag_int = lags[k_peak]
+
+    # Parabolic interpolation: use corr[k-1], corr[k], corr[k+1]
+    if 0 < k_peak < len(corr) - 1:
+        c_minus = corr_unbiased[k_peak - 1]
+        c_0 = corr_unbiased[k_peak]
+        c_plus = corr_unbiased[k_peak + 1]
+
+        denom = -2 * c_0 + c_minus + c_plus
+        if denom != 0:
+            delta = 0.5 * (c_minus - c_plus) / denom
+        else:
+            delta = 0.0
+    else:
+        delta = 0.0
+
+    lag_subsample = lag_int + delta
+    return -lag_subsample.item()
+
+
+def compute_SRD(a: np.typing.NDArray[Any], eps: float = 1e-3) -> float:
+    """
+    symmetric relative difference
+    """
+    a0 = a[:-1]
+    a1 = a[1:]
+    return np.mean(np.abs(a0 - a1) / (np.abs(a0) + np.abs(a1) + eps)).item()
+
+
+def compute_SD(a: np.typing.NDArray[Any]) -> float:
+    """
+    symmetric difference
+    """
+    a0 = a[:-1]
+    a1 = a[1:]
+    return np.mean(np.abs(a0 - a1)).item()
+
+
+def measure_lag_and_noise(
+    target: np.ndarray, measured: np.ndarray, allow_flip: bool = False
+) -> tuple[float, float]:
+    """
+    Align two 1D signals given lag_samples (positive => measured lags behind target).
+    Returns (target_aligned, measured_aligned).
+    """
+    assert target.ndim == 1 and measured.ndim == 1 and len(target) == len(measured), (
+        "Inputs must be 1D arrays of the same length"
+    )
+    lag_samples = cross_correlation(target, measured, allow_flip=allow_flip)
+    n = len(target)
+    target = target[:n]
+    measured = measured[:n]
+
+    t = np.arange(n, dtype=float)
+    # measured_aligned(t) = measured(t - lag)
+    measured_aligned = np.interp(t - lag_samples, t, measured, left=np.nan, right=np.nan)
+
+    valid = ~np.isnan(measured_aligned)
+    target_aligned = target[valid]
+    measured_aligned = measured_aligned[valid]
+
+    err = measured_aligned - target_aligned
+    amp = (np.max(target_aligned) - np.min(target_aligned)) / 2
+    nrms_err = np.sqrt(np.mean(err**2)) / amp
+    return lag_samples, nrms_err
+
+
 def plot_metric_on_axis(
     ax: Any,
     steps: Any,

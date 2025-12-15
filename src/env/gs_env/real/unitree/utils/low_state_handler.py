@@ -1,11 +1,9 @@
-import argparse
 import struct
 import threading
 import time
 from typing import Any
 
 import numpy as np
-import yaml
 from unitree_sdk2py.core.channel import ChannelFactoryInitialize, ChannelSubscriber
 from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowState_ as LowState_go
 from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_ as LowState_hg
@@ -122,7 +120,9 @@ class LowStateMsgHandler:
         self.quat = np.zeros(4)
         self.ang_vel = np.zeros(3)
         self.joint_pos = np.zeros(self.num_dof)
+        self.joint_pos_raw = np.zeros(self.num_dof)
         self.joint_vel = np.zeros(self.num_dof)
+        self.joint_vel_raw = np.zeros(self.num_dof)
         self.torque = np.zeros(self.num_dof)
         self.temperature = np.zeros(self.num_dof)
         if self.robot_name == "go2":
@@ -149,6 +149,20 @@ class LowStateMsgHandler:
         self.F1 = 0
         self.F3 = 0
         self.Start = 0
+
+        # Low Pass Filter
+        self.low_pass_alpha = 0.1
+
+        # Logging (runs in a separate thread)
+        self._logging = False
+        self._joint_pos_history = []
+        self._joint_pos_raw_history = []
+        self._joint_vel_history = []
+        self._joint_vel_raw_history = []
+        self._logging_time_stamp = []
+        # Use control frequency times decimation for logging frequency
+        self.logging_interval = 1.0 / (self.cfg.ctrl_freq * self.cfg.decimation)
+        self._logging_thread: threading.Thread | None = None
 
         # Create a thread for the main loop
         self.main_thread = threading.Thread(target=self.main_loop, daemon=True)
@@ -210,8 +224,10 @@ class LowStateMsgHandler:
 
     def parse_motor_state(self, motor_state: Any) -> None:
         for i in range(self.num_dof):
-            self.joint_pos[i] = motor_state[self.dof_index[i]].q
-            self.joint_vel[i] = motor_state[self.dof_index[i]].dq
+            self.joint_pos_raw[i] = motor_state[self.dof_index[i]].q
+            self.joint_pos[i] += self.low_pass_alpha * (self.joint_pos_raw[i] - self.joint_pos[i])
+            self.joint_vel_raw[i] = motor_state[self.dof_index[i]].dq
+            self.joint_vel[i] += self.low_pass_alpha * (self.joint_vel_raw[i] - self.joint_vel[i])
             self.torque[i] = motor_state[self.dof_index[i]].tau_est
             # self.temperature[i] = motor_state[self.dof_index[i]].temperature
             error_code = motor_state[self.dof_index[i]].reserve[0]
@@ -219,7 +235,6 @@ class LowStateMsgHandler:
                 print(f"Joint {self.dof_index[i]} Error Code: {error_code}")
         for i in range(self.num_full_dof):
             self.full_joint_pos[i] = motor_state[i].q
-        # print(self.joint_pos)
         # print("low_state_big_flag", self.robot_low_state.bit_flag)
 
     def parse_botton(self, data1: int, data2: int) -> None:
@@ -278,21 +293,45 @@ class LowStateMsgHandler:
         # print("F3:", self.F3)
         # print("Start:", self.Start)
 
+    # =========================
+    # Logging API (threaded)
+    # =========================
+    def _logging_loop(self) -> None:
+        next_log_time = time.time() + self.logging_interval
+        while self._logging:
+            # Copy current measurements
+            self._joint_pos_history.append(self.joint_pos.copy())
+            self._joint_pos_raw_history.append(self.joint_pos_raw.copy())
+            self._joint_vel_history.append(self.joint_vel.copy())
+            self._joint_vel_raw_history.append(self.joint_vel_raw.copy())
+            self._logging_time_stamp.append(time.time() - self._logging_start_time)
+            time.sleep(max(0, next_log_time - time.time()))
+            next_log_time += self.logging_interval
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-r", "--robot", type=str, default="go2")
-    parser.add_argument("-n", "--name", type=str, default="default")
-    parser.add_argument("-c", "--cfg", type=str, default=None)
-    args = parser.parse_args()
+    def start_logging(self) -> None:
+        self._logging = True
+        self._joint_pos_history = []
+        self._joint_pos_raw_history = []
+        self._joint_vel_history = []
+        self._joint_vel_raw_history = []
+        self._logging_thread = threading.Thread(target=self._logging_loop, daemon=True)
+        self._logging_start_time = time.time()
+        self._logging_thread.start()
 
-    cfg = yaml.safe_load(open(f"../{args.robot}.yaml"))
-    if args.cfg is not None:
-        cfg = yaml.safe_load(open(f"./cfgs/{args.robot}/{args.cfg}.yaml"))
-
-    # Run steta publisher
-    low_state_handler = LowStateMsgHandler(cfg)
-    low_state_handler.init()
-    while True:
-        time.sleep(1)
-        print(low_state_handler.joint_pos)
+    def stop_logging(self) -> dict[str, np.typing.NDArray]:
+        self._logging = False
+        if self._logging_thread is not None:
+            self._logging_thread.join(timeout=1.0)
+            self._logging_thread = None
+        pos_history = np.stack(self._joint_pos_history, axis=0)
+        pos_raw_history = np.stack(self._joint_pos_raw_history, axis=0)
+        vel_history = np.stack(self._joint_vel_history, axis=0)
+        vel_raw_history = np.stack(self._joint_vel_raw_history, axis=0)
+        time_stamp = np.array(self._logging_time_stamp)
+        return {
+            "dof_pos": pos_history,
+            "dof_pos_raw": pos_raw_history,
+            "dof_vel": vel_history,
+            "dof_vel_raw": vel_raw_history,
+            "time_stamp": time_stamp,
+        }

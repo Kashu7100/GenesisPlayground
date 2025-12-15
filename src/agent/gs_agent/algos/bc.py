@@ -46,11 +46,22 @@ class BC(BaseAlgo):
         )
         self._curr_ep_len = torch.zeros(self.env.num_envs, device=self.device, dtype=torch.float)
 
+        # Load teacher config if provided (needed for teacher obs dim)
+        if cfg.teacher_config_path is not None:
+            self._load_teacher_config(cfg.teacher_config_path)
+        else:
+            self._teacher_obs_dim = self._actor_obs_dim  # Use student obs dim as fallback
+            print(
+                f"Teacher config not provided, using student observation dimension: {self._teacher_obs_dim}"
+            )
+
         # Build actor network
         self._build_actor()
-        if not cfg.teacher_path.is_file():
-            raise ValueError("Teacher path must be a file.")
-        self._build_teacher(cfg.teacher_path)
+        if cfg.teacher_path.is_file():
+            self._build_teacher(cfg.teacher_path)
+        else:
+            self._teacher = None
+            print("Teacher network not provided.")
         self._build_rollouts()
 
     def _build_actor(self) -> None:
@@ -67,10 +78,36 @@ class BC(BaseAlgo):
         ).to(self.device)
         self._actor_optimizer = torch.optim.Adam(self._actor.parameters(), lr=self.cfg.lr)
 
+    def _load_teacher_config(self, teacher_config_path: Path) -> None:
+        """Load teacher environment config from yaml file."""
+        if not teacher_config_path.is_file():
+            raise ValueError(f"Teacher config path must be a file: {teacher_config_path}")
+
+        # Import here to avoid circular dependencies
+        import sys
+        from pathlib import Path as PathLib
+
+        # Add examples to path to import utils
+        examples_path = PathLib(__file__).parent.parent.parent.parent / "examples"
+        if str(examples_path) not in sys.path:
+            sys.path.insert(0, str(examples_path))
+
+        # Import the appropriate config class based on environment type
+        from gs_env.sim.envs.config.schema import MotionEnvArgs
+        from utils import yaml_to_config  # type: ignore
+
+        # Try to load as different config types
+        self._teacher_env_args = yaml_to_config(teacher_config_path, MotionEnvArgs)
+
+        # Compute teacher observation dimension
+        teacher_obs, _ = self.env.get_observations(obs_args=self._teacher_env_args)
+        self._teacher_obs_dim = teacher_obs.shape[-1]
+        print(f"Teacher observation dimension: {self._teacher_obs_dim}")
+
     def _build_teacher(self, teacher_path: Path) -> None:
         teacher_backbone = NetworkFactory.create_network(
             network_backbone_args=self.cfg.teacher_backbone,
-            input_dim=self._actor_obs_dim,
+            input_dim=self._teacher_obs_dim,  # Use teacher obs dim instead of student
             output_dim=self._action_dim,
             device=self.device,
         )
@@ -78,7 +115,10 @@ class BC(BaseAlgo):
             policy_backbone=teacher_backbone,
             action_dim=self._action_dim,
         ).to(self.device)
-        self._teacher.load_state_dict(torch.load(teacher_path)["model_state_dict"])
+        self._teacher.load_state_dict(
+            torch.load(teacher_path, map_location=self.device)["actor_state_dict"]
+        )
+        self._teacher.eval()
 
     def _build_rollouts(self) -> None:
         self._rollouts = BCBuffer(
@@ -91,12 +131,21 @@ class BC(BaseAlgo):
 
     def _collect_rollouts(self, num_steps: int) -> dict[str, Any]:
         """Collect rollouts."""
-        obs = self.env.get_observations()
+        assert self._teacher is not None, "Teacher network not built"
+        obs, _ = self.env.get_observations()  # Unpack actor and critic obs, only use actor
+        termination_buffer = []
+        reward_terms_buffer = []
+        info_buffer = []
         with torch.inference_mode():
             # collect rollouts and compute returns & advantages
             for _step in range(num_steps):
                 student_actions = self._actor(obs)
-                teacher_action, _ = self._teacher(obs, deterministic=True)
+                # Get teacher observations if teacher config is provided
+                if hasattr(self, "_teacher_env_args"):
+                    teacher_obs, _ = self.env.get_observations(obs_args=self._teacher_env_args)
+                else:
+                    teacher_obs = obs  # Use student obs if no teacher config
+                teacher_action, _ = self._teacher(teacher_obs, deterministic=True)
                 # Step environment
                 next_obs, reward, terminated, truncated, _extra_infos = self.env.step(
                     student_actions
@@ -115,6 +164,11 @@ class BC(BaseAlgo):
                 self._curr_reward_sum += reward.squeeze(-1)
                 self._curr_ep_len += 1
 
+                # Update termination buffer
+                termination_buffer.append(_extra_infos["termination"])
+                reward_terms_buffer.append(_extra_infos["reward_terms"])
+                if "info" in _extra_infos:
+                    info_buffer.append(_extra_infos["info"])
                 # Check for episode completions and reset tracking
                 done_mask = terminated.unsqueeze(-1) | truncated.unsqueeze(-1)
                 new_ids = (done_mask > 0).nonzero(as_tuple=False)
@@ -135,9 +189,29 @@ class BC(BaseAlgo):
         if len(self._rewbuffer) > 0:
             mean_reward = statistics.mean(self._rewbuffer)
             mean_ep_len = statistics.mean(self._lenbuffer)
+        mean_termination = {}
+        mean_reward_terms = {}
+        mean_info = {}
+        if len(termination_buffer) > 0:
+            for key in termination_buffer[0].keys():
+                terminations = torch.stack([termination[key] for termination in termination_buffer])
+                mean_termination[key] = terminations.to(torch.float).mean().item()
+        if len(reward_terms_buffer) > 0:
+            for key in reward_terms_buffer[0].keys():
+                reward_terms = torch.stack(
+                    [reward_term[key] for reward_term in reward_terms_buffer]
+                )
+                mean_reward_terms[key] = reward_terms.mean().item()
+        if len(info_buffer) > 0:
+            for key in info_buffer[0].keys():
+                infos = torch.tensor([info[key] for info in info_buffer])
+                mean_info[key] = infos.mean().item()
         return {
             "mean_reward": mean_reward,
             "mean_ep_len": mean_ep_len,
+            "termination": mean_termination,
+            "reward_terms": mean_reward_terms,
+            "info": mean_info,
         }
 
     def _train_one_batch(self, mini_batch: dict[BCBufferKey, torch.Tensor]) -> dict[str, Any]:
@@ -179,7 +253,9 @@ class BC(BaseAlgo):
                 "mean_length": rollout_infos["mean_ep_len"],
             },
             "train": {
-                "loss": statistics.mean([metrics["loss"] for metrics in train_metrics_list]),
+                "imitation_loss": statistics.mean(
+                    [metrics["loss"] for metrics in train_metrics_list]
+                ),
             },
             "speed": {
                 "rollout_time": rollouts_time,
@@ -187,12 +263,15 @@ class BC(BaseAlgo):
                 "train_time": train_time,
                 "rollout_step": self._num_steps * self._num_envs,
             },
+            "termination": rollout_infos["termination"],
+            "reward_terms": rollout_infos["reward_terms"],
+            "info": rollout_infos["info"],
         }
         return iteration_infos
 
     def save(self, path: Path, infos: dict[str, Any] | None = None) -> None:
         saved_dict = {
-            "model_state_dict": self._actor.state_dict(),
+            "actor_state_dict": self._actor.state_dict(),
             "optimizer_state_dict": self._actor_optimizer.state_dict(),
             "iter": self.current_iter,
         }
@@ -201,8 +280,8 @@ class BC(BaseAlgo):
         torch.save(saved_dict, path)
 
     def load(self, path: Path, load_optimizer: bool = True) -> None:
-        checkpoint = torch.load(path)
-        self._actor.load_state_dict(checkpoint["model_state_dict"])
+        checkpoint = torch.load(path, map_location=self.device)
+        self._actor.load_state_dict(checkpoint["actor_state_dict"])
         if load_optimizer:
             self._actor_optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self.current_iter = checkpoint["iter"]

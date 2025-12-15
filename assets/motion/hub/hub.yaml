@@ -1,0 +1,12 @@
+motions:
+  - file: bruce_lee.pkl
+    weight: 1.0
+  - file: nezha.pkl
+    weight: 1.0
+  - file: singleleg.pkl
+    weight: 1.0
+  - file: squat.pkl
+    weight: 1.0
+  - file: swallow_balance.pkl
+    weight: 1.0
+root_path: assets/motion/hub

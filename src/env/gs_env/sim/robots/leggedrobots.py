@@ -16,8 +16,8 @@ from gs_env.sim.robots.config.schema import (
     BaseAction,
     CtrlType,
     DRJointPosAction,
+    DRJointPosVelAction,
     HumanoidRobotArgs,
-    JointPosAction,
     LeggedRobotArgs,
     ManipulatorRobotArgs,
     QuadrupedRobotArgs,
@@ -87,13 +87,35 @@ class LeggedRobotBase(BaseGymRobot):
         self._dof_kd = torch.tensor(dof_kd, device=self._device)
         self._batched_dof_kp = self._dof_kp[None, :].repeat(self._num_envs, 1)
         self._batched_dof_kd = self._dof_kd[None, :].repeat(self._num_envs, 1)
+        self._torque = torch.zeros((self._num_envs, self._dof_dim), device=self._device)
+        self._dof_armature = None
+        if self._args.dof_armature is not None:
+            dof_armature = []
+            for dof_name in self.dof_names:
+                for key in self._args.dof_armature.keys():
+                    if key in dof_name:
+                        dof_armature.append(self._args.dof_armature[key])
+            self._dof_armature = torch.tensor(dof_armature, device=self._device)
+
+        #
+        self.direct_drive_mask = torch.ones((self._dof_dim,), device=self._device)
+        for joint_name in self._args.indirect_drive_joint_names:
+            for i, dof_name in enumerate(self.dof_names):
+                if joint_name in dof_name:
+                    self.direct_drive_mask[i] = 0.0
+
+        #
+        self._kp_ratio = torch.ones(self._num_envs, self._dof_dim, device=self._device)
+        self._kd_ratio = torch.ones(self._num_envs, self._dof_dim, device=self._device)
         self._motor_strength = torch.ones(
             (self._num_envs, self._dof_dim), device=self._device
         )  # motor strength scaling factor
         self._motor_offset = torch.zeros(
             (self._num_envs, self._dof_dim), device=self._device
         )  # motor offset
-        self._torque = torch.zeros((self._num_envs, self._dof_dim), device=self._device)
+        self._friction_ratio = torch.ones(self._num_envs, 1, device=self._device)
+        self._added_mass = torch.zeros(self._num_envs, 1, device=self._device)
+        self._com_displacement = torch.zeros(self._num_envs, 3, device=self._device)
 
         # default states
         self._default_pos = torch.tensor(
@@ -117,13 +139,33 @@ class LeggedRobotBase(BaseGymRobot):
 
         # == set up control dispatch ==
         self._dispatch: dict[CtrlType, Callable[[BaseAction], None]] = {  # type: ignore
-            CtrlType.JOINT_POSITION.value: self._apply_joint_pos,
             CtrlType.DR_JOINT_POSITION.value: self._apply_dr_joint_pos,
+            CtrlType.DR_JOINT_POSITION_VELOCITY.value: self._apply_dr_joint_pos_vel,
         }
+        self.feed_forward_ratio = self._args.feed_forward_ratio
+
+        # == set up dof pos logger ==
+        self._target_dof_pos_history = []
+        self._dof_pos_history = []
+        self._dof_vel_history = []
+        self._logging_time_stamp = []
+        self._time_stamp = 0.0
+        self._logging = False
+
+        self._steps_since_randomize_pds = 0
+        self._steps_to_randomize_pds = 10
 
     def post_build_init(self, eval_mode: bool = False) -> None:
+        self._mass = self._robot.get_mass()
+
         if not eval_mode:
             self._init_domain_randomization()
+
+        if self._dof_armature is not None:
+            self._robot.set_dofs_armature(
+                self._dof_armature,
+                dofs_idx_local=self._dofs_idx_local,
+            )
 
         # limits
         self._dof_pos_limits = torch.stack(self._robot.get_dofs_limit(self._dofs_idx_local), dim=1)
@@ -134,11 +176,19 @@ class LeggedRobotBase(BaseGymRobot):
             self._dof_pos_limits[i, 0] = m - 0.5 * r * self._args.soft_dof_pos_range
             self._dof_pos_limits[i, 1] = m + 0.5 * r * self._args.soft_dof_pos_range
         self._torque_limits = self._robot.get_dofs_force_range(self._dofs_idx_local)[1]
+        if self._args.dof_vel_limit is not None:
+            dof_vel_limit = []
+            for dof_name in self.dof_names:
+                for key in self._args.dof_vel_limit.keys():
+                    if key in dof_name:
+                        dof_vel_limit.append(self._args.dof_vel_limit[key])
+            self._dof_vel_limit = torch.tensor(dof_vel_limit, device=self._device)
 
     def _init_domain_randomization(self) -> None:
         envs_idx: torch.IntTensor = torch.arange(0, self._num_envs, device=self._device)  # type: ignore
         self._randomize_rigids(envs_idx)
         self._randomize_controls(envs_idx)
+        self._steps_since_randomize_pds = 0
 
     def _randomize_rigids(self, envs_idx: torch.IntTensor) -> None:
         # friction
@@ -149,6 +199,7 @@ class LeggedRobotBase(BaseGymRobot):
             + min_friction
         )
         solver.set_geoms_friction_ratio(ratios, torch.arange(0, solver.n_geoms), envs_idx)
+        self._friction_ratio[envs_idx, 0] = ratios[:, 0]
         # mass
         min_mass, max_mass = self._args.dr_args.mass_range
         added_mass = torch.rand(len(envs_idx), 1) * (max_mass - min_mass) + min_mass
@@ -159,6 +210,7 @@ class LeggedRobotBase(BaseGymRobot):
             ],
             envs_idx,
         )
+        self._added_mass[envs_idx] = added_mass
         # com displacement
         min_com, max_com = self._args.dr_args.com_displacement_range
         displacement = (torch.rand(len(envs_idx), 1, 3) - 0.5) * (max_com - min_com) + min_com
@@ -169,12 +221,14 @@ class LeggedRobotBase(BaseGymRobot):
             ],
             envs_idx,
         )
+        self._com_displacement[envs_idx] = displacement[:, 0, :]
 
     def _randomize_controls(self, envs_idx: torch.IntTensor) -> None:
         # kp
         min_kp, max_kp = self._args.dr_args.kp_range
         ratios = torch.rand(len(envs_idx), self._dof_dim) * (max_kp - min_kp) + min_kp
         self._batched_dof_kp[envs_idx] = ratios * self._dof_kp[None, :]
+        self._kp_ratio[envs_idx] = ratios
         # self._robot.set_dofs_kp(
         #     self._batched_dof_kp[envs_idx], dofs_idx_local=self._dofs_idx_local, envs_idx=envs_idx
         # )
@@ -182,6 +236,7 @@ class LeggedRobotBase(BaseGymRobot):
         min_kd, max_kd = self._args.dr_args.kd_range
         ratios = torch.rand(len(envs_idx), self._dof_dim) * (max_kd - min_kd) + min_kd
         self._batched_dof_kd[envs_idx] = ratios * self._dof_kd[None, :]
+        self._kd_ratio[envs_idx] = ratios
         # self._robot.set_dofs_kv(
         #     self._batched_dof_kd[envs_idx], dofs_idx_local=self._dofs_idx_local, envs_idx=envs_idx
         # )
@@ -195,6 +250,18 @@ class LeggedRobotBase(BaseGymRobot):
         self._motor_offset[envs_idx] = (
             torch.rand(len(envs_idx), self._dof_dim) * (max_offset - min_offset) + min_offset
         )
+
+    def _randomize_pds(self) -> None:
+        # kp
+        min_kp, max_kp = self._args.dr_args.kp_range
+        ratios = torch.rand(self._num_envs, self._dof_dim) * (max_kp - min_kp) + min_kp
+        self._batched_dof_kp[:] = ratios * self._dof_kp[None, :]
+        self._kp_ratio[:] = ratios
+        # kd
+        min_kd, max_kd = self._args.dr_args.kd_range
+        ratios = torch.rand(self._num_envs, self._dof_dim) * (max_kd - min_kd) + min_kd
+        self._batched_dof_kd[:] = ratios * self._dof_kd[None, :]
+        self._kd_ratio[:] = ratios
 
     def reset(self, envs_idx: torch.Tensor | None = None) -> None:
         if envs_idx is None:
@@ -278,28 +345,32 @@ class LeggedRobotBase(BaseGymRobot):
         """
         Apply the action to the robot.
         """
+        if self._logging:
+            self._dof_pos_history.append(self._dof_pos.clone())
+            self._dof_vel_history.append(self._dof_vel.clone())
+            self._target_dof_pos_history.append(
+                action[:, : self._dof_dim].clone() + self._default_dof_pos
+            )
+            self._logging_time_stamp.append(self._time_stamp)
+            self._time_stamp += 1.0 / self.ctrl_freq / self.decimation
         if isinstance(action, torch.Tensor):
             match self.ctrl_type:
                 case CtrlType.DR_JOINT_POSITION:
                     action = DRJointPosAction(joint_pos=action)
-                case CtrlType.JOINT_POSITION:
-                    action = JointPosAction(joint_pos=action, gripper_width=0.0)
+                case CtrlType.DR_JOINT_POSITION_VELOCITY:
+                    joint_pos = action[:, : self._dof_dim]
+                    joint_vel = action[:, self._dof_dim :]
+                    action = DRJointPosVelAction(joint_pos=joint_pos, joint_vel=joint_vel)
                 case _:
                     raise ValueError(f"Unsupported control type: {self.ctrl_type}")
         self._dispatch[self._args.ctrl_type](action)
         self._dof_pos[:] = self._robot.get_dofs_position(self._dofs_idx_local)
         self._dof_vel[:] = self._robot.get_dofs_velocity(self._dofs_idx_local)
 
-    def _apply_joint_pos(self, act: JointPosAction) -> None:
-        """
-        Apply joint position control to the robot.
-        """
-        assert act.joint_pos.shape == (
-            self._num_envs,
-            self._dof_dim,
-        ), "Joint position action must match the number of joints."
-        q_target = act.joint_pos.to(self._device)
-        self._robot.control_dofs_position(position=q_target)
+        self._steps_since_randomize_pds += 1
+        if self._steps_since_randomize_pds >= self._steps_to_randomize_pds:
+            self._randomize_pds()
+            self._steps_since_randomize_pds = 0
 
     def _apply_dr_joint_pos(self, act: DRJointPosAction) -> None:
         """
@@ -314,6 +385,27 @@ class LeggedRobotBase(BaseGymRobot):
             * (act.joint_pos + self._default_dof_pos - self._dof_pos + self._motor_offset)
             - self._batched_dof_kd * self._dof_vel
         )
+        # logging.info(f"q_des mean: {torch.mean(act.joint_pos + self._default_dof_pos - self._dof_pos + self._motor_offset)}")
+        # logging.info(f"qd_des mean: {torch.mean(self._dof_vel)}")
+        q_force = q_force * self._motor_strength
+        q_force = torch.clamp(q_force, -self._torque_limits, self._torque_limits)
+        self._torque[:] = q_force
+        self._robot.control_dofs_force(force=q_force, dofs_idx_local=self._dofs_idx_local)
+
+    def _apply_dr_joint_pos_vel(self, act: DRJointPosVelAction) -> None:
+        """
+        Apply noised joint position and velocity control to the robot.
+        """
+        assert act.joint_pos.shape == (
+            self._num_envs,
+            self._dof_dim,
+        ), "Joint position action must match the number of joints."
+
+        q_force = self._batched_dof_kp * (
+            act.joint_pos + self._default_dof_pos - self._dof_pos + self._motor_offset
+        ) + self._batched_dof_kd * (
+            -self._dof_vel + act.joint_vel * self.direct_drive_mask * self.feed_forward_ratio
+        )
         q_force = q_force * self._motor_strength
         q_force = torch.clamp(q_force, -self._torque_limits, self._torque_limits)
         self._torque[:] = q_force
@@ -325,9 +417,65 @@ class LeggedRobotBase(BaseGymRobot):
     def get_joint_dofs_idx_local_by_name(self, name: str) -> list[int]:
         return self._robot.get_joint(name).dofs_idx_local
 
+    def start_logging(self) -> None:
+        self._logging = True
+        self._dof_pos_history = []
+        self._dof_vel_history = []
+        self._target_dof_pos_history = []
+        self._logging_time_stamp = []
+        self._time_stamp = 0.0
+
+    def stop_logging(self) -> dict[str, torch.Tensor]:
+        self._logging = False
+        pos_history = torch.stack(self._dof_pos_history, dim=1).cpu()
+        vel_history = torch.stack(self._dof_vel_history, dim=1).cpu()
+        target_pos_history = torch.stack(self._target_dof_pos_history, dim=1).cpu()
+        time_stamp = torch.tensor(self._logging_time_stamp, device=self._device)
+        self._dof_pos_history = []
+        self._dof_vel_history = []
+        self._target_dof_pos_history = []
+        self._logging_time_stamp = []
+        self._time_stamp = 0.0
+        return {
+            "dof_pos": pos_history,
+            "dof_vel": vel_history,
+            "target_dof_pos": target_pos_history,
+            "time_stamp": time_stamp,
+        }
+
+    @property
+    def dof_kp(self) -> torch.Tensor:
+        return self._dof_kp
+
+    @property
+    def dof_kd(self) -> torch.Tensor:
+        return self._dof_kd
+
+    @property
+    def batched_dof_kp(self) -> torch.Tensor:
+        return self._batched_dof_kp
+
+    @property
+    def batched_dof_kd(self) -> torch.Tensor:
+        return self._batched_dof_kd
+
+    def set_batched_dof_kp(self, batched_dof_kp: torch.Tensor) -> None:
+        self._batched_dof_kp = batched_dof_kp
+
+    def set_batched_dof_kd(self, batched_dof_kd: torch.Tensor) -> None:
+        self._batched_dof_kd = batched_dof_kd
+
     @property
     def action_space(self) -> spaces.Box:
         return self._action_space
+
+    @property
+    def robot(self) -> RigidEntity:
+        return self._robot
+
+    @property
+    def mass(self) -> float:
+        return self._mass
 
     @property
     def n_links(self) -> int:
@@ -344,6 +492,10 @@ class LeggedRobotBase(BaseGymRobot):
     @property
     def dof_names(self) -> list[str]:
         return self._args.dof_names
+
+    @property
+    def link_names(self) -> list[str]:
+        return [link.name for link in self._robot.links]
 
     @property
     def default_pos(self) -> torch.Tensor:
@@ -390,12 +542,31 @@ class LeggedRobotBase(BaseGymRobot):
         return self._robot.get_links_quat()
 
     @property
-    def link_velocities(self) -> torch.Tensor:
+    def link_lin_velocities(self) -> torch.Tensor:
         return self._robot.get_links_vel()
+
+    @property
+    def link_ang_velocities(self) -> torch.Tensor:
+        return self._robot.get_links_ang()
 
     @property
     def dof_pos_limits(self) -> torch.Tensor:
         return self._dof_pos_limits
+
+    @property
+    def dr_obs(self) -> torch.Tensor:
+        return torch.cat(
+            [
+                self._friction_ratio,
+                self._added_mass,
+                self._com_displacement,
+                self._kp_ratio,
+                self._kd_ratio,
+                self._motor_strength,
+                self._motor_offset,
+            ],
+            dim=-1,
+        )
 
     def __getattr__(self, item: str) -> Any:
         if hasattr(self._robot, item):
@@ -405,6 +576,14 @@ class LeggedRobotBase(BaseGymRobot):
     @property
     def ctrl_type(self) -> CtrlType:
         return self._args.ctrl_type
+
+    @property
+    def ctrl_freq(self) -> float:
+        return self._args.ctrl_freq
+
+    @property
+    def decimation(self) -> int:
+        return self._args.decimation
 
 
 class HumanoidRobotBase(LeggedRobotBase):

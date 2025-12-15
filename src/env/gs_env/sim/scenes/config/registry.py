@@ -250,6 +250,7 @@ SceneArgsRegistry: dict[str, SceneArgs] = {}
 
 
 SceneArgsRegistry["flat_scene_default"] = FlatSceneArgs(
+    scene_type="FlatScene",
     show_viewer=False,
     show_FPS=False,
     center_envs_at_origin=True,
@@ -280,6 +281,7 @@ SceneArgsRegistry["flat_scene_default"] = FlatSceneArgs(
 
 
 SceneArgsRegistry["flat_scene_legged"] = FlatSceneArgs(
+    scene_type="FlatScene",
     show_viewer=False,
     show_FPS=False,
     center_envs_at_origin=True,
@@ -310,6 +312,7 @@ SceneArgsRegistry["flat_scene_legged"] = FlatSceneArgs(
 
 
 SceneArgsRegistry["custom_scene_desk"] = CustomSceneArgs(
+    scene_type="CustomScene",
     show_viewer=False,
     show_FPS=False,
     center_envs_at_origin=True,
@@ -362,6 +365,7 @@ SceneArgsRegistry["custom_scene_desk"] = CustomSceneArgs(
 
 
 SceneArgsRegistry["custom_scene_g1_mocap"] = CustomSceneArgs(
+    scene_type="CustomScene",
     show_viewer=False,
     show_FPS=False,
     center_envs_at_origin=True,
@@ -423,54 +427,6 @@ SceneArgsRegistry["custom_scene_g1_links_tracking"] = CustomSceneArgs(
     remove_ground=False,
     objects=[
         {
-            "name": "pelvis_contour_link",
-            "type": "obj",
-            "path": "assets/robot/unitree_g1/meshes/pelvis_contour_link.STL",
-            "scale": 1.0,
-            "position": (0.6, 0.0, 0.0),
-            "orientation": (0.0, 0.0, 0.0),
-            "fixed": True,
-            "visualization": True,
-            "collision": False,
-            "color": (0.0, 0.0, 1.0),
-        },
-        {
-            "name": "torso_link",
-            "type": "obj",
-            "path": "assets/robot/unitree_g1/meshes/torso_link.STL",
-            "scale": 1.0,
-            "position": (0.0, 0.0, 0.0),
-            "orientation": (0.0, 0.0, 0.0),
-            "fixed": True,
-            "visualization": True,
-            "collision": False,
-            "color": (0.0, 0.0, 1.0),
-        },
-        {
-            "name": "left_rubber_hand",
-            "type": "obj",
-            "path": "assets/robot/unitree_g1/meshes/left_rubber_hand.STL",
-            "scale": 1.0,
-            "position": (0.0, 0.0, 0.0),
-            "orientation": (0.0, 0.0, 0.0),
-            "fixed": True,
-            "visualization": True,
-            "collision": False,
-            "color": (0.0, 0.0, 1.0),
-        },
-        {
-            "name": "right_rubber_hand",
-            "type": "obj",
-            "path": "assets/robot/unitree_g1/meshes/right_rubber_hand.STL",
-            "scale": 1.0,
-            "position": (0.0, 0.0, 0.0),
-            "orientation": (0.0, 0.0, 0.0),
-            "fixed": True,
-            "visualization": True,
-            "collision": False,
-            "color": (0.0, 0.0, 1.0),
-        },
-        {
             "name": "left_ankle_roll_link",
             "type": "obj",
             "path": "assets/robot/unitree_g1/meshes/left_ankle_roll_link.STL",
@@ -489,6 +445,56 @@ SceneArgsRegistry["custom_scene_g1_links_tracking"] = CustomSceneArgs(
             "scale": 1.0,
             "position": (0.0, 0.0, 0.0),
             "orientation": (0.0, 0.0, 0.0),
+            "fixed": True,
+            "visualization": True,
+            "collision": False,
+            "color": (0.0, 0.0, 1.0),
+        },
+        {
+            "name": "pelvis",
+            "type": "obj",
+            "path": "assets/robot/unitree_g1/meshes/pelvis_contour_link.STL",
+            "scale": 1.0,
+            "position": (0.0, 0.0, 0.0),
+            "orientation": (0.0, 0.0, 0.0),
+            "fixed": True,
+            "visualization": True,
+            "collision": False,
+            "color": (0.0, 0.0, 1.0),
+        },
+        {
+            "name": "torso_link",
+            "type": "obj",
+            "path": "assets/robot/unitree_g1/meshes/torso_link_rev_1_0.STL",
+            "scale": 1.0,
+            "position": (0.0, 0.0, 0.0),
+            "orientation": (0.0, 0.0, 0.0),
+            "fixed": True,
+            "visualization": True,
+            "collision": False,
+            "color": (0.0, 0.0, 1.0),
+        },
+        {
+            "name": "left_wrist_yaw_link",
+            "type": "obj",
+            "path": "assets/robot/unitree_g1/meshes/left_rubber_hand.STL",
+            "scale": 1.0,
+            "position": (0.0, 0.0, 0.0),
+            "orientation": (0.0, 0.0, 0.0),
+            "pos_offset": (0.0415, 0.003, 0.0),
+            "fixed": True,
+            "visualization": True,
+            "collision": False,
+            "color": (0.0, 0.0, 1.0),
+        },
+        {
+            "name": "right_wrist_yaw_link",
+            "type": "obj",
+            "path": "assets/robot/unitree_g1/meshes/right_rubber_hand.STL",
+            "scale": 1.0,
+            "position": (0.0, 0.0, 0.0),
+            "orientation": (0.0, 0.0, 0.0),
+            "pos_offset": (0.0415, -0.003, 0.0),
             "fixed": True,
             "visualization": True,
             "collision": False,

@@ -8,6 +8,8 @@ import numpy as np
 import torch
 from PIL import Image
 
+import gs_env.sim.scenes as scenes
+
 #
 from gs_env.common.bases.base_env import BaseEnv
 from gs_env.common.utils.math_utils import (
@@ -20,8 +22,8 @@ from gs_env.common.utils.math_utils import (
 )
 from gs_env.common.utils.misc_utils import get_space_dim
 from gs_env.sim.envs.config.schema import LeggedRobotEnvArgs
+from gs_env.sim.robots.config.schema import CtrlType
 from gs_env.sim.robots.leggedrobots import G1Robot
-from gs_env.sim.scenes import FlatScene
 
 _DEFAULT_DEVICE = torch.device("cpu")
 
@@ -38,6 +40,7 @@ class LeggedRobotEnv(BaseEnv):
         show_viewer: bool = False,
         device: torch.device = _DEFAULT_DEVICE,
         eval_mode: bool = False,
+        debug: bool = False,
     ) -> None:
         super().__init__(device=device)
         self._num_envs = num_envs
@@ -46,17 +49,20 @@ class LeggedRobotEnv(BaseEnv):
         self._refresh_visualizer = False if platform.system() == "Darwin" else True
         self._args = args
         self._eval_mode = eval_mode
+        self.debug = debug
 
         if not gs._initialized:  # noqa: SLF001
             gs.init(performance_mode=True, backend=getattr(gs.constants.backend, device.type))
 
         # == setup the scene ==
-        self._scene = FlatScene(
+        SCENE_CLASS = getattr(scenes, args.scene_args.scene_type)
+        self._scene = SCENE_CLASS(
             num_envs=self._num_envs,
             args=args.scene_args,
             show_viewer=self._show_viewer,
             img_resolution=args.img_resolution,
             env_spacing=(1.0, 1.0),
+            device=self._device,
         )
 
         # == setup the robot ==
@@ -113,7 +119,28 @@ class LeggedRobotEnv(BaseEnv):
         self._action = torch.zeros((self.num_envs, self.action_dim), device=self._device)
         self.last_action = torch.zeros((self.num_envs, self.action_dim), device=self._device)
         self.last_last_action = torch.zeros((self.num_envs, self.action_dim), device=self._device)
+        self._last_target_dof_pos = torch.zeros(
+            (self.num_envs, self.action_dim), device=self._device
+        )
         self.torque = torch.zeros((self.num_envs, self.action_dim), device=self._device)
+        self._target_dof_vel_low_pass = torch.zeros(
+            (self.num_envs, self.action_dim), device=self._device
+        )
+        self.low_pass_alpha = self._args.robot_args.low_pass_alpha
+
+        self.action_scale = torch.ones((self.action_dim,), device=self._device)
+        if self._args.robot_args.adaptive_action_scale:
+            assert self._args.robot_args.dof_torque_limit is not None, (
+                "Adaptive action scaling requires dof_torque_limit to be set."
+            )
+            dof_torque_limit = self._args.robot_args.dof_torque_limit
+            dof_kp = self._args.robot_args.dof_kp
+            for i, dof_name in enumerate(self.dof_names):
+                for key in dof_torque_limit.keys():
+                    if key in dof_name:
+                        self.action_scale[i] = dof_torque_limit[key] / dof_kp[key]
+                        break
+        self.action_scale *= self._args.robot_args.action_scale
 
         self.base_default_pos: torch.Tensor = self._robot.default_pos[None, :].repeat(
             self.num_envs, 1
@@ -142,7 +169,10 @@ class LeggedRobotEnv(BaseEnv):
         self.link_quaternions = torch.zeros(
             (self.num_envs, self._robot.n_links, 4), device=self._device, dtype=torch.float32
         )
-        self.link_velocities = torch.zeros(
+        self.link_lin_velocities = torch.zeros(
+            (self.num_envs, self._robot.n_links, 3), device=self._device, dtype=torch.float32
+        )
+        self.link_ang_velocities = torch.zeros(
             (self.num_envs, self._robot.n_links, 3), device=self._device, dtype=torch.float32
         )
 
@@ -160,7 +190,7 @@ class LeggedRobotEnv(BaseEnv):
             actor_obs_spaces[obs_term] = gym.spaces.Box(
                 low=-np.inf,
                 high=np.inf,
-                shape=(getattr(self, obs_term).shape[-1],),
+                shape=(getattr(self, obs_term).view(self.num_envs, -1).shape[-1],),
                 dtype=np.float32,
             )
         self._actor_observation_space = gym.spaces.Dict(actor_obs_spaces)
@@ -172,12 +202,17 @@ class LeggedRobotEnv(BaseEnv):
             critic_obs_spaces[obs_term] = gym.spaces.Box(
                 low=-np.inf,
                 high=np.inf,
-                shape=(getattr(self, obs_term).shape[-1],),
+                shape=(getattr(self, obs_term).view(self.num_envs, -1).shape[-1],),
                 dtype=np.float32,
             )
         self._critic_observation_space = gym.spaces.Dict(critic_obs_spaces)
         self._info_space = gym.spaces.Dict({})
-        self._extra_info = {}
+        self._extra_info = {"info": {}}
+
+        # terminate after collision on these links
+        self._terminate_link_idx_local = []
+        for name in self._args.terminate_after_collision_on:
+            self._terminate_link_idx_local.append(self._robot.get_link_idx_local_by_name(name))
 
         # rendering
         self._rendered_images = []
@@ -192,23 +227,45 @@ class LeggedRobotEnv(BaseEnv):
             self._random_push_time,
         )
 
+    def _reset_buffers(self, envs_idx: torch.IntTensor) -> None:
+        self.time_since_reset[envs_idx] = 0.0
+        self.last_action[envs_idx] *= 0
+        self.last_last_action[envs_idx] *= 0
+        self._last_target_dof_pos[envs_idx] *= 0
+
     def reset_idx(self, envs_idx: torch.IntTensor) -> None:
         default_pos = self._robot.default_pos[None, :].repeat(len(envs_idx), 1)
         default_quat = self._robot.default_quat[None, :].repeat(len(envs_idx), 1)
         default_dof_pos = self._robot.default_dof_pos[None, :].repeat(len(envs_idx), 1)
         random_euler = torch.zeros((len(envs_idx), 3), device=self._device)
-        random_euler[:, :2] = (torch.rand(len(envs_idx), 2, device=self._device) - 0.5) * 0.3
-        random_euler[:, 2] = torch.rand(len(envs_idx), device=self._device) * 2 * np.pi - np.pi
-        random_dof_pos = torch.rand(len(envs_idx), self._robot.dof_dim, device=self._device) - 0.5
-        random_dof_pos *= 0.3
+        random_euler[:, 0] = (
+            torch.rand(len(envs_idx), device=self._device)
+            * (self._args.reset_pitch_range[1] - self._args.reset_pitch_range[0])
+            + self._args.reset_pitch_range[0]
+        )
+        random_euler[:, 1] = (
+            torch.rand(len(envs_idx), device=self._device)
+            * (self._args.reset_roll_range[1] - self._args.reset_roll_range[0])
+            + self._args.reset_roll_range[0]
+        )
+        random_euler[:, 2] = (
+            torch.rand(len(envs_idx), device=self._device)
+            * (self._args.reset_yaw_range[1] - self._args.reset_yaw_range[0])
+            + self._args.reset_yaw_range[0]
+        )
+        random_dof_pos = (
+            torch.rand(len(envs_idx), self._robot.dof_dim, device=self._device)
+            * (self._args.reset_dof_pos_range[1] - self._args.reset_dof_pos_range[0])
+            + self._args.reset_dof_pos_range[0]
+        )
         if self._eval_mode:
             random_euler *= 0
             random_dof_pos *= 0
         quat = quat_from_euler(random_euler)
         quat = quat_mul(quat, default_quat)
         dof_pos = default_dof_pos + random_dof_pos
-        self.time_since_reset[envs_idx] = 0.0
         self._robot.set_state(pos=default_pos, quat=quat, dof_pos=dof_pos, envs_idx=envs_idx)
+        self._reset_buffers(envs_idx)
 
     def get_terminated(self) -> torch.Tensor:
         reset_buf = self.get_truncated()
@@ -219,10 +276,17 @@ class LeggedRobotEnv(BaseEnv):
         height_mask = self.base_pos[:, 2] < 0.5
         reset_buf |= tilt_mask
         reset_buf |= height_mask
+        contact_force_mask = torch.any(
+            torch.norm(self.link_contact_forces[:, self._terminate_link_idx_local, :], dim=-1)
+            > 1.0,
+            dim=-1,
+        )
+        reset_buf |= contact_force_mask
         self.reset_buf[:] = reset_buf
         termination_dict = {}
         termination_dict["tilt"] = tilt_mask.clone()
         termination_dict["base_height"] = height_mask.clone()
+        termination_dict["contact_force"] = contact_force_mask.clone()
         termination_dict["any"] = reset_buf.clone()
         self._extra_info["termination"] = termination_dict
         return reset_buf
@@ -234,41 +298,93 @@ class LeggedRobotEnv(BaseEnv):
         self.time_out_buf[:] = time_out_buf
         return time_out_buf
 
-    def get_observations(self) -> tuple[torch.Tensor, torch.Tensor]:
-        self._update_buffers()
+    def get_observations(self, obs_args: Any = None) -> tuple[torch.Tensor, torch.Tensor]:
+        """Get observations. If obs_args is provided, use it instead of self._args.
+
+        Args:
+            obs_args: Optional environment args to use for observation computation.
+                     If None, uses self._args (student config).
+        """
+        self.update_buffers()
+        # Use provided obs_args if available, otherwise use self._args
+        args_to_use = obs_args if obs_args is not None else self._args
+
         obs_components = []
-        for key in self._args.actor_obs_terms:
-            obs_gt = getattr(self, key) * self._args.obs_scales.get(key, 1.0)
-            obs_noise = torch.randn_like(obs_gt) * self._args.obs_noises.get(key, 0.0)
+        for key in args_to_use.actor_obs_terms:
+            obs_gt = getattr(self, key) * args_to_use.obs_scales.get(key, 1.0)
+            if len(obs_gt.shape) > 2:
+                obs_gt = obs_gt.view(self.num_envs, -1)
+            obs_noise = torch.randn_like(obs_gt) * args_to_use.obs_noises.get(key, 0.0)
             if self._eval_mode:
                 obs_noise *= 0
             obs_components.append(obs_gt + obs_noise)
         actor_obs = torch.cat(obs_components, dim=-1)
         obs_components = []
-        for key in self._args.critic_obs_terms:
-            obs_gt = getattr(self, key) * self._args.obs_scales.get(key, 1.0)
+        for key in args_to_use.critic_obs_terms:
+            obs_gt = getattr(self, key) * args_to_use.obs_scales.get(key, 1.0)
+            if len(obs_gt.shape) > 2:
+                obs_gt = obs_gt.view(self.num_envs, -1)
             obs_components.append(obs_gt)
         critic_obs = torch.cat(obs_components, dim=-1)
         return actor_obs, critic_obs
+
+    def step(
+        self, action: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, Any]]:
+        # apply action
+        self.apply_action(action)
+        # get terminated
+        terminated = self.get_terminated()
+        if terminated.dim() == 1:
+            terminated = terminated.unsqueeze(-1)
+        # get truncated
+        truncated = self.get_truncated()
+        if truncated.dim() == 1:
+            truncated = truncated.unsqueeze(-1)
+        # get reward
+        reward, reward_terms = self.get_reward()
+        if reward.dim() == 1:
+            reward = reward.unsqueeze(-1)
+        # update history
+        self.update_history()
+        # get extra infos
+        extra_infos = self.get_extra_infos()
+        extra_infos["reward_terms"] = reward_terms
+        # reset if terminated or truncated
+        done_idx = terminated.nonzero(as_tuple=True)[0]
+        if len(done_idx) > 0:
+            self.reset_idx(done_idx)
+        # get observations
+        next_obs, _ = self.get_observations()
+        return next_obs, reward, terminated, truncated, extra_infos
 
     def apply_action(self, action: torch.Tensor) -> None:
         action = action.detach().to(self._device)
         self._action = action
         self._action_buf[:] = torch.cat([self._action_buf[:, :, 1:], action.unsqueeze(-1)], dim=-1)
         exec_action = self._action_buf[:, :, 0]
-        exec_action *= self._args.robot_args.action_scale
+        target_dof_pos = exec_action * self.action_scale.unsqueeze(0)
+        if self._args.robot_args.ctrl_type == CtrlType.DR_JOINT_POSITION_VELOCITY:
+            target_dof_vel = (target_dof_pos - self._last_target_dof_pos) / self.dt
+            self._target_dof_vel_low_pass += self.low_pass_alpha * (
+                target_dof_vel - self._target_dof_vel_low_pass
+            )
+            exec_action = torch.cat([target_dof_pos, self._target_dof_vel_low_pass], dim=-1)
+        else:
+            exec_action = target_dof_pos
+        self._last_target_dof_pos[:] = target_dof_pos.clone()
 
         self.torque *= 0
 
         # Apply actions and simulate physics
-        for _ in range(self._args.robot_args.decimation):
+        for _ in range(self.decimation):
             self._pre_step()
 
             self._robot.apply_action(action=exec_action)
             self._scene.scene.step(refresh_visualizer=self._refresh_visualizer)
             self.torque = torch.max(self.torque, torch.abs(self._robot.torque))
 
-        self._update_buffers()
+        self.update_buffers()
 
         # Render if rendering is enabled
         self._render_headless()
@@ -278,6 +394,8 @@ class LeggedRobotEnv(BaseEnv):
         self.time_since_random_push += self._scene.scene.dt
 
     def update_history(self) -> None:
+        if self.debug:
+            self._draw_debug_vis()
         # save for reward computation
         self.last_last_action = self.last_action.clone()
         self.last_action = self._action.clone()
@@ -289,18 +407,30 @@ class LeggedRobotEnv(BaseEnv):
             self._random_push(envs_idx=push_env_ids)
         self.time_since_random_push[push_env_ids] = 0.0
 
+    def _draw_debug_vis(self) -> None:
+        """Draws visualizations for dubugging (slows down simulation a lot).
+        Default behaviour: draws height measurement points
+        """
+        self.scene.clear_debug_objects()
+        solver = self.scene.rigid_solver
+        com = solver.get_links_root_COM(links_idx=self._robot.body_link_idx).squeeze(0).squeeze(0)
+
+        self.scene.draw_debug_sphere(pos=com, radius=0.05, color=(0, 0, 1, 0.7))
+
     def get_extra_infos(self) -> dict[str, Any]:
-        self._update_buffers()
+        self.update_buffers()
         obs_components = []
         for key in self._args.critic_obs_terms:
             obs_gt = getattr(self, key) * self._args.obs_scales.get(key, 1.0)
+            if len(obs_gt.shape) > 2:
+                obs_gt = obs_gt.view(self.num_envs, -1)
             obs_components.append(obs_gt)
         obs_tensor = torch.cat(obs_components, dim=-1)
         self._extra_info["observations"] = {"critic": obs_tensor}
         self._extra_info["time_outs"] = self.time_out_buf.clone()[:, None]
         return self._extra_info
 
-    def _update_buffers(self) -> None:
+    def update_buffers(self) -> None:
         self.base_pos[:] = self._robot.base_pos
         self.base_quat[:] = self._robot.base_quat
         base_quat_rel = quat_mul(self._robot.base_quat, quat_inv(self.base_default_quat))
@@ -315,25 +445,29 @@ class LeggedRobotEnv(BaseEnv):
         self.link_contact_forces[:] = self._robot.link_contact_forces
         self.link_positions[:] = self._robot.link_positions
         self.link_quaternions[:] = self._robot.link_quaternions
-        self.link_velocities[:] = self._robot.link_velocities
+        self.link_lin_velocities[:] = self._robot.link_lin_velocities
+        self.link_ang_velocities[:] = self._robot.link_ang_velocities
 
     def get_reward(self) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         reward_total = torch.zeros(self.num_envs, device=self._device)
         reward_total_pos = torch.zeros(self.num_envs, device=self._device)
         reward_total_neg = torch.zeros(self.num_envs, device=self._device)
         reward_dict = {}
-        if self._eval_mode:
-            return reward_total, reward_dict
 
+        exist_positive_reward = False
         state_dict = {key: getattr(self, key) for key in self.reward_required_keys}
         for key, func in self._reward_functions.items():
             reward = func(state_dict)
-            if reward.sum() >= 0:
+            if reward.sum() > 0:
                 reward_total_pos += reward
+                exist_positive_reward = True
             else:
                 reward_total_neg += reward
             reward_dict[f"{key}"] = reward.clone()
-        reward_total = reward_total_pos * torch.exp(reward_total_neg)
+        if exist_positive_reward:
+            reward_total = reward_total_pos * torch.exp(reward_total_neg)
+        else:
+            reward_total = torch.exp(reward_total_neg)
         reward_dict["Total"] = reward_total
         reward_dict["TotalPositive"] = reward_total_pos
         reward_dict["TotalNegative"] = reward_total_neg
@@ -420,14 +554,14 @@ class LeggedRobotEnv(BaseEnv):
         assert self.num_envs == 1, "Only support single environment for setting link pose"
         if quat is not None:
             assert quat.shape == (4,), "Quaternion must be a 4D vector"
-            self._update_buffers()
+            self.update_buffers()
             link_quat = self.link_quaternions[0][link_idx_local]
             rotation_quat = quat_mul(quat, quat_inv(link_quat))
             base_quat = quat_mul(rotation_quat, self.base_quat[0])
             self._robot.set_state(quat=base_quat)
         if pos is not None:
             assert pos.shape == (3,), "Position must be a 3D vector"
-            self._update_buffers()
+            self.update_buffers()
             link_pos = self.link_positions[0][link_idx_local]
             base_pos = self.base_pos[0] + pos - link_pos
             self._robot.set_state(pos=base_pos)
@@ -444,8 +578,66 @@ class LeggedRobotEnv(BaseEnv):
         assert dof_pos.shape == (self._robot.dof_dim,), "Dof pos must match the number of joints"
         self._robot.set_state(dof_pos=dof_pos)
 
+    def global_to_local(self, vec_global: torch.Tensor) -> torch.Tensor:
+        vec_shape = vec_global.shape
+        vec_global = vec_global.reshape(-1, vec_shape[-1])
+        if vec_shape[-1] == 3:
+            vec_local = quat_apply(quat_inv(self.base_quat), vec_global)
+        elif vec_shape[-1] == 4:
+            vec_local = quat_mul(quat_inv(self.base_quat), vec_global)
+        else:
+            raise ValueError(f"Vector must be (..., 3) or (..., 4), but got {vec_shape}")
+        return vec_local.reshape(vec_shape)
+
+    def local_to_global(self, vec_local: torch.Tensor) -> torch.Tensor:
+        vec_shape = vec_local.shape
+        vec_local = vec_local.reshape(-1, vec_shape[-1])
+        if vec_shape[-1] == 3:
+            vec_global = quat_apply(self.base_quat, vec_local)
+        elif vec_shape[-1] == 4:
+            vec_global = quat_mul(self.base_quat, vec_local)
+        else:
+            raise ValueError(f"Vector must be (..., 3) or (..., 4), but got {vec_shape}")
+        return vec_global.reshape(vec_shape)
+
+    @staticmethod
+    def batched_local_to_global(base_quat: torch.Tensor, local_vec: torch.Tensor) -> torch.Tensor:
+        assert base_quat.shape[0] == local_vec.shape[0]
+        local_vec_shape = local_vec.shape
+        local_vec = local_vec.reshape(local_vec_shape[0], -1, local_vec_shape[-1])
+        B, L, D = local_vec.shape
+        local_flat = local_vec.reshape(B * L, D)
+        quat_rep = base_quat[:, None, :].repeat(1, L, 1).reshape(B * L, 4)
+        if D == 3:
+            global_flat = quat_apply(quat_rep, local_flat)
+        elif D == 4:
+            global_flat = quat_mul(quat_rep, local_flat)
+        else:
+            raise ValueError(
+                f"Local vector shape must be (B, L, 3) or (B, L, 4), but got {local_flat.shape}"
+            )
+        return global_flat.reshape(local_vec_shape)
+
+    @staticmethod
+    def batched_global_to_local(base_quat: torch.Tensor, global_vec: torch.Tensor) -> torch.Tensor:
+        assert base_quat.shape[0] == global_vec.shape[0]
+        global_vec_shape = global_vec.shape
+        global_vec = global_vec.reshape(global_vec_shape[0], -1, global_vec_shape[-1])
+        B, L, D = global_vec.shape
+        global_flat = global_vec.reshape(B * L, D)
+        quat_rep = base_quat[:, None, :].repeat(1, L, 1).reshape(B * L, 4)
+        if D == 3:
+            local_flat = quat_apply(quat_inv(quat_rep), global_flat)
+        elif D == 4:
+            local_flat = quat_mul(quat_inv(quat_rep), global_flat)
+        else:
+            raise ValueError(
+                f"Global vector shape must be (B, L, 3) or (B, L, 4), but got {global_flat.shape}"
+            )
+        return local_flat.reshape(global_vec_shape)
+
     @property
-    def scene(self) -> FlatScene:
+    def scene(self) -> scenes.CustomScene | scenes.FlatScene:
         return self._scene
 
     @property
@@ -466,10 +658,6 @@ class LeggedRobotEnv(BaseEnv):
         return act_dim
 
     @property
-    def action_scale(self) -> float:
-        return self._args.robot_args.action_scale
-
-    @property
     def action(self) -> torch.Tensor:
         return self._action
 
@@ -479,7 +667,7 @@ class LeggedRobotEnv(BaseEnv):
 
     @property
     def dt(self) -> float:
-        return self._scene.scene.dt * self._args.robot_args.decimation
+        return self._scene.scene.dt * self.decimation
 
     @property
     def actor_obs_dim(self) -> int:
@@ -508,6 +696,10 @@ class LeggedRobotEnv(BaseEnv):
     @property
     def dof_vel(self) -> torch.Tensor:
         return self._robot.dof_vel
+
+    @property
+    def dr_obs(self) -> torch.Tensor:
+        return self._robot.dr_obs
 
     @property
     def reward_required_keys(self) -> set[str]:

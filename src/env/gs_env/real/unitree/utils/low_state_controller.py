@@ -1,9 +1,7 @@
-import argparse
-import sys
+import threading
 import time
 
 import numpy as np
-import yaml
 from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import MotionSwitcherClient
 from unitree_sdk2py.core.channel import ChannelPublisher
 from unitree_sdk2py.idl.default import (
@@ -36,6 +34,8 @@ class LowStateCmdHandler(LowStateMsgHandler):
             kd_groups[self.group_from_name(name, kd_groups.keys())] for name in self.dof_names
         ]
 
+        self.feed_forward_ratio = self.cfg.feed_forward_ratio
+
         self.default_dof_pos = np.array([self.cfg.default_dof_pos[name] for name in self.dof_names])
 
         reset_joint_angles = getattr(self.cfg, "reset_joint_angles", None)
@@ -46,6 +46,7 @@ class LowStateCmdHandler(LowStateMsgHandler):
             default_pos = [self.cfg.default_dof_pos[name] for name in self.dof_names]
             self.reset_dof_pos = np.array(default_pos)
         self.target_pos = self.reset_dof_pos
+        self.target_vel = np.zeros_like(self.target_pos)
 
         self.full_default_dof_pos = np.zeros(self.num_full_dof)
         for i in range(self.num_dof):
@@ -60,6 +61,8 @@ class LowStateCmdHandler(LowStateMsgHandler):
 
         # thread handling
         self.lowCmdWriteThreadPtr = None
+
+        self._target_pos_history = []
 
         self.crc = CRC()
 
@@ -227,7 +230,9 @@ class LowStateCmdHandler(LowStateMsgHandler):
     def set_cmd(self) -> None:
         for i in range(self.num_dof):
             self.low_cmd.motor_cmd[self.dof_index[i]].q = self.target_pos[i]
-            self.low_cmd.motor_cmd[self.dof_index[i]].dq = 0
+            self.low_cmd.motor_cmd[self.dof_index[i]].dq = (
+                self.target_vel[i] * self.feed_forward_ratio
+            )
             self.low_cmd.motor_cmd[self.dof_index[i]].kp = self.kp[i]
             self.low_cmd.motor_cmd[self.dof_index[i]].kd = self.kd[i]
             self.low_cmd.motor_cmd[self.dof_index[i]].tau = 0
@@ -264,26 +269,50 @@ class LowStateCmdHandler(LowStateMsgHandler):
     def is_emergency_stop(self) -> bool:
         return self._emergency_stop
 
+    # =========================
+    # Logging API (threaded)
+    # =========================
+    def _logging_loop(self) -> None:
+        next_log_time = time.time() + self.logging_interval
+        while self._logging:
+            # Copy current measurements
+            self._joint_pos_history.append(self.joint_pos.copy())
+            self._joint_pos_raw_history.append(self.joint_pos_raw.copy())
+            self._joint_vel_history.append(self.joint_vel.copy())
+            self._joint_vel_raw_history.append(self.joint_vel_raw.copy())
+            self._target_pos_history.append(self.target_pos.copy())
+            self._logging_time_stamp.append(time.time() - self._logging_start_time)
+            time.sleep(max(0, next_log_time - time.time()))
+            next_log_time += self.logging_interval
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-r", "--robot", type=str, default="go2")
-    parser.add_argument("-n", "--name", type=str, default="default")
-    parser.add_argument("-c", "--cfg", type=str, default=None)
-    args = parser.parse_args()
+    def start_logging(self) -> None:
+        self._logging = True
+        self._joint_pos_history = []
+        self._joint_pos_raw_history = []
+        self._joint_vel_history = []
+        self._joint_vel_raw_history = []
+        self._target_pos_history = []
+        self._logging_time_stamp = []
+        self._logging_thread = threading.Thread(target=self._logging_loop, daemon=True)
+        self._logging_start_time = time.time()
+        self._logging_thread.start()
 
-    cfg = yaml.safe_load(open(f"../{args.robot}.yaml"))
-    if args.cfg is not None:
-        cfg = yaml.safe_load(open(f"../{args.robot}/{args.cfg}.yaml"))
-
-    # Run steta publisher
-    low_state_handler = LowStateCmdHandler(cfg)
-    low_state_handler.init()
-    low_state_handler.start()
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        if low_state_handler.robot_name == "go2":
-            low_state_handler.recover()
-        sys.exit()
+    def stop_logging(self) -> dict[str, np.typing.NDArray]:
+        self._logging = False
+        if self._logging_thread is not None:
+            self._logging_thread.join(timeout=1.0)
+            self._logging_thread = None
+        pos_history = np.stack(self._joint_pos_history, axis=0)
+        pos_raw_history = np.stack(self._joint_pos_raw_history, axis=0)
+        vel_history = np.stack(self._joint_vel_history, axis=0)
+        vel_raw_history = np.stack(self._joint_vel_raw_history, axis=0)
+        target_pos_history = np.stack(self._target_pos_history, axis=0)
+        time_stamp = np.array(self._logging_time_stamp)
+        return {
+            "dof_pos": pos_history,
+            "dof_pos_raw": pos_raw_history,
+            "dof_vel": vel_history,
+            "dof_vel_raw": vel_raw_history,
+            "target_dof_pos": target_pos_history,
+            "time_stamp": time_stamp,
+        }

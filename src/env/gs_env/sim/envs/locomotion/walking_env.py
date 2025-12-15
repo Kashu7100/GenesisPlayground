@@ -23,6 +23,7 @@ class WalkingEnv(LeggedRobotEnv):
         show_viewer: bool = False,
         device: torch.device = _DEFAULT_DEVICE,
         eval_mode: bool = False,
+        debug: bool = False,
     ) -> None:
         # Initialize base legged-robot environment
         self._args = args
@@ -32,6 +33,7 @@ class WalkingEnv(LeggedRobotEnv):
             show_viewer=show_viewer,
             device=device,
             eval_mode=eval_mode,
+            debug=debug,
         )
 
     def _init(self) -> None:
@@ -56,12 +58,12 @@ class WalkingEnv(LeggedRobotEnv):
             device=self._device,
             dtype=torch.float32,
         )
-        self.feet_contact = torch.zeros(
+        self.foot_contact = torch.zeros(
             (self.num_envs, len(self._robot.foot_links_idx)),
             device=self._device,
             dtype=torch.float32,
         )
-        self.feet_contact_force = torch.zeros(
+        self.foot_contact_force = torch.zeros(
             (self.num_envs, len(self._robot.foot_links_idx)),
             device=self._device,
             dtype=torch.float32,
@@ -99,7 +101,7 @@ class WalkingEnv(LeggedRobotEnv):
     def apply_action(self, action: torch.Tensor) -> None:
         super().apply_action(action=action)
 
-        self.feet_first_contact[:] = (self.feet_air_time > 0.0) * self.feet_contact
+        self.feet_first_contact[:] = (self.feet_air_time > 0.0) * self.foot_contact
         self.feet_air_time += self.dt
 
     def _pre_step(self) -> None:
@@ -108,7 +110,7 @@ class WalkingEnv(LeggedRobotEnv):
 
     def update_history(self) -> None:
         super().update_history()
-        self.feet_air_time *= 1 - self.feet_contact
+        self.feet_air_time *= 1 - self.foot_contact
 
         resample_env_ids = torch.nonzero(
             self.time_since_resample > self._command_resample_time, as_tuple=False
@@ -116,10 +118,10 @@ class WalkingEnv(LeggedRobotEnv):
         self._resample_commands(envs_idx=resample_env_ids)
         self.time_since_resample[resample_env_ids] = 0.0
 
-    def _update_buffers(self) -> None:
-        super()._update_buffers()
-        self.feet_contact_force[:] = self.link_contact_forces[:, self._robot.foot_links_idx, 2]
-        self.feet_contact[:] = self.feet_contact_force > 1.0
+    def update_buffers(self) -> None:
+        super().update_buffers()
+        self.foot_contact_force[:] = self.link_contact_forces[:, self._robot.foot_links_idx, 2]
+        self.foot_contact[:] = self.foot_contact_force > 1.0
         self.feet_position[:] = self.link_positions[:, self._robot.foot_links_idx]
         self.feet_height[:] = self.feet_position[:, :, 2]
         self.feet_velocity[:] = self.link_velocities[:, self._robot.foot_links_idx]
@@ -135,3 +137,13 @@ class WalkingEnv(LeggedRobotEnv):
                 * (self.commands_range[i][1] - self.commands_range[i][0])
                 + self.commands_range[i][0]
             )
+        self.commands[envs_idx, :2] *= (
+            torch.norm(self.commands[envs_idx, :2], dim=-1) > self._args.command_lin_vel_clip
+        )[:, None]
+        self.commands[envs_idx, 2] *= (
+            torch.abs(self.commands[envs_idx, 2]) > self._args.command_ang_vel_clip
+        )
+        if_stand_still = (
+            torch.rand((len(envs_idx), 1), device=self.device) < self._args.extra_stand_still_ratio
+        )
+        self.commands[envs_idx] *= ~if_stand_still

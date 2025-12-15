@@ -20,6 +20,7 @@ class LearningRateType(GenesisEnum):
 class AlgorithmType(GenesisEnum):
     PPO = "PPO"
     BC = "BC"
+    DAGGER = "DAGGER"
 
 
 class PPOArgs(BaseModel):
@@ -58,6 +59,7 @@ class PPOArgs(BaseModel):
     entropy_coef: NonNegativeFloat = 0.0
     max_grad_norm: PositiveFloat = 1.0
     target_kl: PositiveFloat = 0.02
+    use_clipped_value_loss: bool = False
 
     # Training
     num_epochs: NonNegativeInt = 10
@@ -86,8 +88,12 @@ class BCArgs(BaseModel):
     """Policy learning rate"""
     max_grad_norm: PositiveFloat = 1.0
 
-    # Teacher path
+    # Teacher path and config
     teacher_path: Path
+    teacher_config_path: Path | None = None
+    """Path to teacher environment config yaml file. If None, uses student obs dim."""
+    teacher_obs_dim: NonNegativeInt | None = None
+    """Teacher observation dimension. If None, will be computed from teacher config or use student obs dim."""
 
     # Training
     num_epochs: NonNegativeInt = 10
@@ -101,4 +107,50 @@ class BCArgs(BaseModel):
     weight_decay: NonNegativeFloat = 0.0
 
 
-AlgorithmArgs = PPOArgs | BCArgs
+class DaggerArgs(BaseModel):
+    """Configuration for DAgger algorithm."""
+
+    model_config = genesis_pydantic_config(frozen=True)
+
+    # Algorithm type
+    algorithm_type: AlgorithmType = AlgorithmType.DAGGER
+
+    # Network architecture
+    policy_backbone: NetworkBackboneConfig = MLPConfig()
+    teacher_backbone: NetworkBackboneConfig = MLPConfig()
+    critic_backbone: NetworkBackboneConfig = MLPConfig()
+
+    # Learning rates
+    lr: PositiveFloat = 3e-4
+    """Policy learning rate"""
+    value_lr: PositiveFloat | None = None
+    """Value function learning rate. None means use the same learning rate as the policy"""
+    max_grad_norm: PositiveFloat = 1.0
+
+    # Discount factor for returns (no GAE)
+    gamma: PositiveFloat = Field(default=0.99, ge=0, le=1)
+
+    # Value function
+    value_loss_coef: PositiveFloat = 1.0
+    use_clipped_value_loss: bool = False
+    clip_ratio: PositiveFloat = 0.2
+    """Clip ratio for clipped value loss"""
+
+    # Teacher path and config
+    teacher_path: Path
+    teacher_config_path: Path
+    """Path to teacher environment config yaml file"""
+    teacher_obs_dim: NonNegativeInt | None = None
+    """Teacher observation dimension. If None, will be computed from teacher config."""
+
+    # Training
+    num_epochs: NonNegativeInt = 10
+    num_mini_batches: NonNegativeInt = 4
+    rollout_length: NonNegativeInt = 1000
+
+    # Optimizer
+    optimizer_type: OptimizerType = OptimizerType.ADAM
+    weight_decay: NonNegativeFloat = 0.0
+
+
+AlgorithmArgs = PPOArgs | BCArgs | DaggerArgs

@@ -10,6 +10,8 @@ class BaseSceneArgs(BaseModel):
     center_envs_at_origin: bool
     compile_kernels: bool
 
+    scene_type: str
+
     sim_options: gs.options.SimOptions
     tool_options: gs.options.ToolOptions
     rigid_options: gs.options.RigidOptions

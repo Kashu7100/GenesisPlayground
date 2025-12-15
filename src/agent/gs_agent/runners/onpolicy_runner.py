@@ -64,8 +64,19 @@ class OnPolicyRunner(BaseRunner):
         total_iterations = 0
         reward_list = []
 
+        if self.args.freeze_actor_iterations:
+            print(f"Freezing actor for {self.args.freeze_actor_iterations} iterations")
+            self.algorithm.freeze_actor()
+        if self.args.freeze_critic_iterations:
+            print(f"Freezing critic for {self.args.freeze_critic_iterations} iterations")
+            self.algorithm.freeze_critic()
+
         for iteration in range(self.args.total_iterations):
             # Training step
+            if iteration == self.args.freeze_actor_iterations:
+                self.algorithm.unfreeze_actor()
+            if iteration == self.args.freeze_critic_iterations:
+                self.algorithm.unfreeze_critic()
             train_one_iteration_metrics = self.algorithm.train_one_iteration()
 
             total_iterations += 1
@@ -89,8 +100,7 @@ class OnPolicyRunner(BaseRunner):
             "total_iterations": total_iterations,
             "total_steps": total_steps,
             "total_time": training_time,
-            "final_reward": reward_list[-1],
-            "final_iteration": total_iterations,
+            "final_reward": reward_list[-1] if reward_list else 0.0,
         }
 
     def _log_metrics(
