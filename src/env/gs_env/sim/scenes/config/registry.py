@@ -393,38 +393,6 @@ SceneArgsRegistry["custom_scene_g1_mocap"] = CustomSceneArgs(
     ),
     normal=(0.0, 0.0, 1.0),
     remove_ground=False,
-    objects=[],
-)
-
-
-SceneArgsRegistry["custom_scene_g1_links_tracking"] = CustomSceneArgs(
-    show_viewer=False,
-    show_FPS=False,
-    center_envs_at_origin=True,
-    compile_kernels=True,
-    sim_options=SimArgsRegistry["legged"],
-    tool_options=ToolArgsRegistry["default"],
-    rigid_options=gs.options.RigidOptions(
-        enable_joint_limit=True,
-        enable_collision=True,
-        gravity=(0, 0, -9.8),
-        box_box_detection=True,
-    ),
-    avatar_options=AvatarArgsRegistry["default"],
-    mpm_options=MPMArgsRegistry["default"],
-    # sph_options=SPHArgsRegistry["default"],
-    fem_options=FEMArgsRegistry["default"],
-    sf_options=SFArgsRegistry["default"],
-    # pbd_options=PBDArgsRegistry["default"],
-    vis_options=VisArgsRegistry["default"],
-    viewer_options=gs.options.ViewerOptions(
-        camera_pos=(-2.0, 0.0, 0.6),
-        camera_lookat=(0.0, 0.0, 0.6),
-        camera_fov=50,
-        max_FPS=60,
-    ),
-    normal=(0.0, 0.0, 1.0),
-    remove_ground=False,
     objects=[
         {
             "name": "left_ankle_roll_link",
