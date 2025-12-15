@@ -204,7 +204,6 @@ def main(
         # Initialize tracking variables
         last_action_t = torch.zeros(1, env.action_dim, device=device)
         commands_t = torch.zeros(1, 3, device=device)
-        last_update_time = time.time()
         total_inference_time = 0
         step_id = 0
 
@@ -215,17 +214,13 @@ def main(
         redis_client.update()
         redis_client.update_quat(env.base_quat)
 
+        next_step_time = time.time() + 0.02
+        start_step_time = time.time()
         while True:
             # Check termination condition (only for real robot)
             if not sim and hasattr(env, "is_emergency_stop") and env.is_emergency_stop:  # type: ignore
                 print("Emergency stop triggered!")
                 break
-
-            # Control loop timing (50 Hz)
-            if time.time() - last_update_time < 0.02:
-                time.sleep(0.001)
-                continue
-            last_update_time = time.time()
 
             if not sim:
                 commands_t[0, 0] = env.robot.Ly  # forward velocity (m/s)
@@ -303,9 +298,18 @@ def main(
             last_action_t = action_t.clone()
             step_id += 1
 
+            # Control loop timing (50 Hz)
+            if time.time() < next_step_time:
+                next_step_time = next_step_time + 0.02
+                time.sleep(max(0, next_step_time - time.time()))
+            else:
+                next_step_time = time.time() + 0.02
+
             if step_id % 100 == 0:
                 print(f"Step {step_id}: Average inference time: {total_inference_time / 100:.4f}s")
+                print(f"Step {step_id}: FPS: {100 / (time.time() - start_step_time):.2f}")
                 total_inference_time = 0
+                start_step_time = time.time()
 
     try:
         if view and sim:
