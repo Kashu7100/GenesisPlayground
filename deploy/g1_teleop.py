@@ -206,6 +206,7 @@ def main(
         commands_t = torch.zeros(1, 3, device=device)
         total_inference_time = 0
         step_id = 0
+        action_scale = 0
 
         # Build link_name_to_idx mapping: index in tracking_link_names list
         link_name_to_idx = {link_name: idx for idx, link_name in enumerate(tracking_link_names)}
@@ -221,6 +222,9 @@ def main(
             if not sim and hasattr(env, "is_emergency_stop") and env.is_emergency_stop:  # type: ignore
                 print("Emergency stop triggered!")
                 break
+            if step_id < 50:
+                action_scale += 0.02
+                action_scale = min(action_scale, 1.0)
 
             if not sim:
                 commands_t[0, 0] = env.robot.Ly  # forward velocity (m/s)
@@ -273,7 +277,7 @@ def main(
                 total_inference_time += end_time - start_time
 
             # print(action_t)
-            env.apply_action(action_t)
+            env.apply_action(action_t * action_scale)
 
             if sim:
                 env.time_since_reset[0] = -1.0  # type: ignore

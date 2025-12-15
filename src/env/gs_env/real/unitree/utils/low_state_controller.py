@@ -232,7 +232,7 @@ class LowStateCmdHandler(LowStateMsgHandler):
             self.low_cmd.motor_cmd[self.dof_index[i]].q = self.target_pos[i]
             self.low_cmd.motor_cmd[self.dof_index[i]].dq = (
                 self.target_vel[i] * self.feed_forward_ratio
-            )
+            ) * 0.6
             self.low_cmd.motor_cmd[self.dof_index[i]].kp = self.kp[i]
             self.low_cmd.motor_cmd[self.dof_index[i]].kd = self.kd[i]
             self.low_cmd.motor_cmd[self.dof_index[i]].tau = 0
