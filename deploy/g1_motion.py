@@ -267,6 +267,7 @@ def main(
             env.apply_action(action_t)
 
             if sim:
+                env.time_since_reset[0] = -1.0  # type: ignore
                 terminated = env.get_terminated()  # type: ignore
                 if terminated[0]:
                     env.reset_idx(torch.IntTensor([0]))  # type: ignore

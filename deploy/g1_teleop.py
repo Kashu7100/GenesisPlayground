@@ -253,20 +253,19 @@ def main(
                     ).reshape(1, -1)
                 elif key == "motion_obs":
                     curr_dict = {
-                        "base_pos": redis_client.last_base_pos,
-                        "base_quat": redis_client.last_base_quat,
+                        "base_pos": redis_client.last_ref_base_pos,
+                        "base_quat": redis_client.last_ref_base_quat,
                     }
                     future_dict = redis_client.get_future_dict(motion_obs_elements)
-
+                    base_quat = env.base_quat
                     obs_gt = build_motion_obs_from_dict(
                         curr_dict,
                         future_dict,
                         torch.tensor([0], dtype=torch.long, device=device),
-                        base_quat=env.base_quat,
+                        base_quat=base_quat,
                     )
                 else:
                     obs_gt = getattr(env, key) * env_args.obs_scales.get(key, 1.0)
-                    # print(key, obs_gt)
                 obs_components.append(obs_gt)
             obs_t = torch.cat(obs_components, dim=-1)
 
@@ -282,6 +281,7 @@ def main(
             env.apply_action(action_t)
 
             if sim:
+                env.time_since_reset[0] = -1.0  # type: ignore
                 terminated = env.get_terminated()  # type: ignore
                 if terminated[0]:
                     env.reset_idx(torch.IntTensor([0]))  # type: ignore

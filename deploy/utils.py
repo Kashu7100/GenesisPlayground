@@ -24,30 +24,30 @@ class RedisClient:
         self._key = key
         self._device = device
         self._dof_dim = 29
-        # Raw variables (before transformations)
-        self.base_pos = torch.zeros(1, 3, device=device)
-        self.base_quat = torch.zeros(1, 4, device=device)
-        self.base_quat[:, 0] = 1.0
-        self.last_base_pos = torch.zeros(1, 3, device=device)
-        self.last_base_quat = torch.zeros(1, 4, device=device)
-        self.last_base_quat[:, 0] = 1.0
-        self.base_lin_vel = torch.zeros(1, 3, device=device)
-        self.base_ang_vel = torch.zeros(1, 3, device=device)
-        self.base_ang_vel_local = torch.zeros(1, 3, device=device)
-        self.dof_pos = torch.zeros(1, self._dof_dim, device=device)
-        self.dof_vel = torch.zeros(1, self._dof_dim, device=device)
-        self.foot_contact = torch.zeros(1, 0, device=device)
+        self.num_tracking_links = num_tracking_links
         # Ref variables (after transformations)
         self.ref_dof_pos = torch.zeros(1, self._dof_dim, device=device)
         self.ref_dof_vel = torch.zeros(1, self._dof_dim, device=device)
         self.ref_base_pos = torch.zeros(1, 3, device=device)
+        self.last_ref_base_pos = torch.zeros(1, 3, device=device)
         self.ref_base_quat = torch.zeros(1, 4, device=device)
+        self.last_ref_base_quat = torch.zeros(1, 4, device=device)
         self.ref_base_euler = torch.zeros(1, 3, device=device)
         self.ref_base_rotation_6D = torch.zeros(1, 6, device=device)
-        self.ref_base_rotation_6D[:, [0, 4]] = 1.0
         self.ref_base_lin_vel_local = torch.zeros(1, 3, device=device)
         self.ref_base_ang_vel_local = torch.zeros(1, 3, device=device)
-        # timestamp variables
+        self.ref_foot_contact = torch.ones(1, 2, device=device)
+        self.link_pos_local_yaw = torch.zeros(1, self.num_tracking_links, 3, device=device)
+        self.link_quat_local_yaw = torch.zeros(1, self.num_tracking_links, 4, device=device)
+        self._zero_all()
+
+        # Yaw difference quaternion (stored and applied to all subsequent updates)
+        self._yaw_diff_quat = torch.zeros(1, 4, device=device)
+        self._yaw_diff_quat[:, 0] = 1.0
+        # Motion obs element selection (None or empty => compute none by default)
+        self._motion_obs_elements: set[str] | None = None
+
+    def _zero_all(self) -> None:
         self.base_pos_timestamp = -1
         self.base_quat_timestamp = -1
         self.base_lin_vel_timestamp = -1
@@ -58,42 +58,49 @@ class RedisClient:
         self.link_pos_local_timestamp = -1
         self.link_quat_local_timestamp = -1
         self.foot_contact_timestamp = -1
-
-        self.num_tracking_links = num_tracking_links
-        self.link_pos_local_yaw = torch.zeros(1, num_tracking_links, 3, device=device)
-        self.link_quat_local_yaw = torch.zeros(1, num_tracking_links, 4, device=device)
-
-        # Yaw difference quaternion (stored and applied to all subsequent updates)
-        self._yaw_diff_quat = torch.zeros(1, 4, device=device)
-        self._yaw_diff_quat[:, 0] = 1.0
-        # Motion obs element selection (None or empty => compute none by default)
-        self._motion_obs_elements: set[str] | None = None
-
-    def _zero_all(self) -> None:
-        # Zero raw variables
-        self.base_pos.zero_()
-        self.base_quat.zero_()
-        self.base_quat[:, 0] = 1.0
-        self.last_base_pos.zero_()
-        self.last_base_quat.zero_()
-        self.last_base_quat[:, 0] = 1.0
-        self.base_lin_vel.zero_()
-        self.base_ang_vel.zero_()
-        self.base_ang_vel_local.zero_()
-        self.dof_pos.zero_()
-        self.dof_vel.zero_()
-        self.foot_contact.zero_()
+        self._r.set(f"{self._key}:timestamp:base_pos", -1)
+        self._r.set(f"{self._key}:timestamp:base_quat", -1)
+        self._r.set(f"{self._key}:timestamp:base_lin_vel", -1)
+        self._r.set(f"{self._key}:timestamp:base_ang_vel", -1)
+        self._r.set(f"{self._key}:timestamp:base_ang_vel_local", -1)
+        self._r.set(f"{self._key}:timestamp:dof_pos", -1)
+        self._r.set(f"{self._key}:timestamp:dof_vel", -1)
+        self._r.set(f"{self._key}:timestamp:link_pos_local", -1)
+        self._r.set(f"{self._key}:timestamp:link_quat_local", -1)
+        self._r.set(f"{self._key}:timestamp:link_lin_vel", -1)
+        self._r.set(f"{self._key}:timestamp:link_ang_vel", -1)
+        self._r.set(f"{self._key}:timestamp:foot_contact", -1)
         # Zero ref variables
         self.ref_dof_pos.zero_()
         self.ref_dof_vel.zero_()
         self.ref_base_pos.zero_()
+        self.ref_base_pos[0, 2] = -2.0
+        self.last_ref_base_pos.zero_()
         self.ref_base_quat.zero_()
         self.ref_base_quat[:, 0] = 1.0
+        self.last_ref_base_quat.zero_()
+        self.last_ref_base_quat[:, 0] = 1.0
         self.ref_base_euler.zero_()
         self.ref_base_rotation_6D.zero_()
         self.ref_base_rotation_6D[:, [0, 4]] = 1.0
         self.ref_base_lin_vel_local.zero_()
         self.ref_base_ang_vel_local.zero_()
+        self.ref_foot_contact[:] = 0.0
+        self.link_pos_local_yaw.zero_()
+        self.link_pos_local_yaw = torch.tensor(
+            [
+                [0.0, 0.1, 0.05],
+                [0.0, -0.1, 0.05],
+                [0.2, 0.2, 0.8],
+                [0.2, -0.2, 0.8],
+                [0.0, 0.0, 0.8],
+                [0.0, 0.0, 0.8],
+            ],
+            dtype=torch.float32,
+            device=self._device,
+        )[None, : self.num_tracking_links, :]
+        self.link_quat_local_yaw.zero_()
+        self.link_quat_local_yaw[:, :, 0] = 1.0
 
     def _fit_dim(self, data: list[float], dim: int) -> torch.Tensor:
         out = torch.zeros(1, dim, device=self._device)
@@ -146,13 +153,12 @@ class RedisClient:
             new_timestamp = self._get_timestamp("base_pos")
             if new_timestamp != self.base_pos_timestamp:
                 # Store previous value before updating
-                self.last_base_pos.copy_(self.ref_base_pos)
+                self.last_ref_base_pos.copy_(self.ref_base_pos)
                 base_pos = torch.tensor(
                     self._get_field("base_pos", [0.0, 0.0, 0.0]),
                     dtype=torch.float32,
                     device=self._device,
                 ).view(1, 3)
-                self.base_pos = base_pos  # Store raw value
                 self.ref_base_pos = quat_apply(self._yaw_diff_quat, base_pos)
                 self.base_pos_timestamp = new_timestamp
 
@@ -160,13 +166,12 @@ class RedisClient:
             new_timestamp = self._get_timestamp("base_quat")
             if new_timestamp != self.base_quat_timestamp:
                 # Store previous value before updating
-                self.last_base_quat.copy_(self.ref_base_quat)
+                self.last_ref_base_quat.copy_(self.ref_base_quat)
                 base_quat = torch.tensor(
                     self._get_field("base_quat", [1.0, 0.0, 0.0, 0.0]),
                     dtype=torch.float32,
                     device=self._device,
                 ).view(1, 4)
-                self.base_quat = base_quat  # Store raw value
                 self.ref_base_quat = quat_mul(self._yaw_diff_quat, base_quat)
                 # self.ref_base_quat = base_quat
                 self.base_quat_timestamp = new_timestamp
@@ -182,7 +187,6 @@ class RedisClient:
                     dtype=torch.float32,
                     device=self._device,
                 ).view(1, 3)
-                self.base_lin_vel = base_lin_vel  # Store raw value
                 # Apply yaw_diff_quat first (equivalent to base_yaw_offset_quat in motion_env)
                 base_lin_vel = quat_apply(self._yaw_diff_quat, base_lin_vel)
                 # Convert to local frame using ref_base_quat (equivalent to batched_global_to_local)
@@ -198,7 +202,6 @@ class RedisClient:
                     dtype=torch.float32,
                     device=self._device,
                 ).view(1, 3)
-                self.base_ang_vel = base_ang_vel  # Store raw value
                 # Apply yaw_diff_quat first (equivalent to base_yaw_offset_quat in motion_env)
                 base_ang_vel = quat_apply(self._yaw_diff_quat, base_ang_vel)
                 # Convert to local frame using ref_base_quat (equivalent to batched_global_to_local)
@@ -214,7 +217,6 @@ class RedisClient:
                     dtype=torch.float32,
                     device=self._device,
                 ).view(1, 3)
-                self.base_ang_vel_local = base_ang_vel_local  # Store raw value
                 # Use directly without transformation (as in motion_env.py line 627)
                 self.ref_base_ang_vel_local = base_ang_vel_local
                 self.base_ang_vel_local_timestamp = new_timestamp
@@ -223,7 +225,6 @@ class RedisClient:
             new_timestamp = self._get_timestamp("dof_pos")
             if new_timestamp != self.dof_pos_timestamp:
                 dof_pos = self._fit_dim(self._get_field("dof_pos", []), self._dof_dim)
-                self.dof_pos = dof_pos  # Store raw value
                 self.ref_dof_pos = dof_pos
                 self.dof_pos_timestamp = new_timestamp
 
@@ -231,7 +232,6 @@ class RedisClient:
             new_timestamp = self._get_timestamp("dof_vel")
             if new_timestamp != self.dof_vel_timestamp:
                 dof_vel = self._fit_dim(self._get_field("dof_vel", []), self._dof_dim)
-                self.dof_vel = dof_vel  # Store raw value
                 self.ref_dof_vel = dof_vel
                 self.dof_vel_timestamp = new_timestamp
 
@@ -266,13 +266,13 @@ class RedisClient:
                 if len(foot_contact_data) > 0:
                     # Resize buffers if needed
                     n_feet = len(foot_contact_data)
-                    if self.foot_contact.shape[1] != n_feet:
-                        self.foot_contact = torch.zeros(1, n_feet, device=self._device)
+                    if self.ref_foot_contact.shape[1] != n_feet:
+                        self.ref_foot_contact = torch.zeros(1, n_feet, device=self._device)
                         self.ref_foot_contact = torch.zeros(1, n_feet, device=self._device)
                     foot_contact = torch.tensor(
                         foot_contact_data, dtype=torch.float32, device=self._device
                     ).view(1, n_feet)
-                    self.foot_contact = foot_contact  # Store raw value
+                    self.ref_foot_contact = foot_contact  # Store raw value
                     # Use directly without transformation (as in motion_env.py line 638)
                     self.ref_foot_contact = foot_contact
                     self.foot_contact_timestamp = new_timestamp
