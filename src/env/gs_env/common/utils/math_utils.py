@@ -58,6 +58,54 @@ def quat_to_rotmat(q: torch.Tensor) -> torch.Tensor:
     return rot
 
 
+def rotmat_to_quat(R: torch.Tensor) -> torch.Tensor:
+    """R: (...,3,3) -> q: (...,4) wxyz. Assumes R is a proper rotation."""
+    # Robust conversion (branch on diagonal dominance)
+    t = R[..., 0, 0] + R[..., 1, 1] + R[..., 2, 2]
+
+    q = torch.empty(R.shape[:-2] + (4,), dtype=R.dtype, device=R.device)
+
+    cond = t > 0.0
+    # t > 0
+    if cond.any():
+        tr = t[cond]
+        s = torch.sqrt(tr + 1.0) * 2.0
+        q[cond, 0] = 0.25 * s
+        q[cond, 1] = (R[cond, 2, 1] - R[cond, 1, 2]) / s
+        q[cond, 2] = (R[cond, 0, 2] - R[cond, 2, 0]) / s
+        q[cond, 3] = (R[cond, 1, 0] - R[cond, 0, 1]) / s
+
+    # t <= 0: find major diagonal
+    cond0 = (~cond) & (R[..., 0, 0] > R[..., 1, 1]) & (R[..., 0, 0] > R[..., 2, 2])
+    cond1 = (~cond) & (~cond0) & (R[..., 1, 1] > R[..., 2, 2])
+    cond2 = (~cond) & (~cond0) & (~cond1)
+
+    if cond0.any():
+        s = torch.sqrt(1.0 + R[cond0, 0, 0] - R[cond0, 1, 1] - R[cond0, 2, 2]) * 2.0
+        q[cond0, 0] = (R[cond0, 2, 1] - R[cond0, 1, 2]) / s
+        q[cond0, 1] = 0.25 * s
+        q[cond0, 2] = (R[cond0, 0, 1] + R[cond0, 1, 0]) / s
+        q[cond0, 3] = (R[cond0, 0, 2] + R[cond0, 2, 0]) / s
+
+    if cond1.any():
+        s = torch.sqrt(1.0 + R[cond1, 1, 1] - R[cond1, 0, 0] - R[cond1, 2, 2]) * 2.0
+        q[cond1, 0] = (R[cond1, 0, 2] - R[cond1, 2, 0]) / s
+        q[cond1, 1] = (R[cond1, 0, 1] + R[cond1, 1, 0]) / s
+        q[cond1, 2] = 0.25 * s
+        q[cond1, 3] = (R[cond1, 1, 2] + R[cond1, 2, 1]) / s
+
+    if cond2.any():
+        s = torch.sqrt(1.0 + R[cond2, 2, 2] - R[cond2, 0, 0] - R[cond2, 1, 1]) * 2.0
+        q[cond2, 0] = (R[cond2, 1, 0] - R[cond2, 0, 1]) / s
+        q[cond2, 1] = (R[cond2, 0, 2] + R[cond2, 2, 0]) / s
+        q[cond2, 2] = (R[cond2, 1, 2] + R[cond2, 2, 1]) / s
+        q[cond2, 3] = 0.25 * s
+
+    # normalize
+    q = q / (q.norm(dim=-1, keepdim=True) + 1e-8)
+    return q
+
+
 @torch.jit.script
 def rotmat_to_rotation_6D(rot: torch.Tensor) -> torch.Tensor:
     """
