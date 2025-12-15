@@ -112,18 +112,10 @@ def publish_motion(
     print("=" * 80)
 
     timestamp = 0
+    next_publish_time = time.time() + publish_dt
 
     try:
-        last_ts = time.time()
         while True:
-            # Advance time, loop by motion length
-            t_now = time.time()
-            if t_now - last_ts < publish_dt:
-                time.sleep(0.001)
-                continue
-            last_ts = t_now
-            t_val += publish_dt
-
             if t_val > motion_lib.get_motion_length(motion_id_t):
                 t_val = 0.0
                 motion_id_t += 1
@@ -179,6 +171,16 @@ def publish_motion(
             r.set(f"{key}:timestamp:link_ang_vel", timestamp)
             r.set(f"{key}:timestamp:foot_contact", timestamp)
             timestamp += 1
+
+            # Advance time, loop by motion length
+            t_val += publish_dt
+            t_now = time.time()
+            if t_now < next_publish_time:
+                time.sleep(max(0, next_publish_time - t_now))
+                next_publish_time = next_publish_time + publish_dt
+            else:
+                next_publish_time = time.time() + publish_dt
+
     except KeyboardInterrupt:
         print("\nStopping motion publisher...")
 
