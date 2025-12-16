@@ -1,6 +1,5 @@
 import argparse
 import json
-import socket
 import time
 
 import redis
@@ -14,47 +13,7 @@ from gs_env.common.utils.math_utils import (
     quat_to_rotmat,
     rotmat_to_quat,
 )
-
-
-def _norm_label(label: str) -> str | None:
-    """
-    Normalize label strings to: 'hmd', 'left', 'right'.
-    Returns None if label is unknown.
-    """
-    s = label.strip().lower()
-    if s in ("hmd",):
-        return "hmd"
-    if s in ("left",):
-        return "left"
-    if s in ("right",):
-        return "right"
-    return None
-
-
-def _parse_packet(msg: str) -> tuple[str, torch.Tensor, torch.Tensor] | None:
-    """
-    Expected message format (same as oculus_visualize.py):
-      label,x,y,z,qx,qy,qz,qw
-    Incoming quat is xyzw. We will convert to wxyz for Redis.
-    """
-    parts = msg.strip().split(",")
-    if len(parts) != 8:
-        return None
-
-    label_raw, x, y, z, qx, qy, qz, qw = parts
-    label = _norm_label(label_raw)
-    if label is None:
-        return None
-
-    try:
-        px, py, pz = float(x), float(y), float(z)
-        qx, qy, qz, qw = float(qx), float(qy), float(qz), float(qw)
-    except ValueError:
-        return None
-
-    pos = torch.tensor([px, py, pz], dtype=torch.float32)
-    quat_wxyz = torch.tensor([qw, qx, qy, qz], dtype=torch.float32)
-    return label, pos, quat_wxyz
+from gs_env.real.oculus.OculusClient import OculusClient
 
 
 def _to_list(t: torch.Tensor) -> list[float]:
@@ -68,14 +27,12 @@ class OculusPublisher:
     Redis keys:
         Global Z-up:
         - {key}:global:hmd:pos        [3]
-        - {key}:global:hmd:quat_wxyz  [4]
-        - {key}:global:hmd:recv_time  float
-        - {key}:global:left:pos
-        - {key}:global:left:quat_wxyz
-        - {key}:global:left:recv_time
-        - {key}:global:right:pos
-        - {key}:global:right:quat_wxyz
-        - {key}:global:right:recv_time
+        - {key}:global:hmd:quat       [4]
+        - {key}:global:left:pos       [3]
+        - {key}:global:left:quat      [4]
+        - {key}:global:right:pos      [3]
+        - {key}:global:right:quat     [4]
+        - {key}:global:recvtime       [1]
 
         Motion References:
         - {key}:motion:link_pos_local       [N*3]
@@ -89,12 +46,10 @@ class OculusPublisher:
     ) -> None:
         self.r = redis.from_url(redis_url)
 
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.bind((udp_host, udp_port))
+        self.client = OculusClient(udp_host=udp_host, udp_port=udp_port)
 
         self.key = key
         self.freq_hz = freq_hz
-        self.last_publish_time = time.time()
 
         # x_t = z_o, y_t = -x_o, z_t = y_o
         # Oculus uses left-handed Y-up coordinate system
@@ -105,16 +60,12 @@ class OculusPublisher:
         )
         self.AT = self.A.t()
 
-        self.hmd_pos_z: None | torch.Tensor = None
-        self.hmd_quat_z: None | torch.Tensor = None
-        self.left_pos_z: None | torch.Tensor = None
-        self.left_quat_z: None | torch.Tensor = None
-        self.right_pos_z: None | torch.Tensor = None
-        self.right_quat_z: None | torch.Tensor = None
-
-        self.hmd_recv_time: None | float = None
-        self.left_recv_time: None | float = None
-        self.right_recv_time: None | float = None
+        self.hmd_pos: torch.Tensor = torch.zeros(3)
+        self.hmd_quat: torch.Tensor = torch.tensor([1.0, 0.0, 0.0, 0.0])
+        self.left_pos: torch.Tensor = torch.zeros(3)
+        self.left_quat: torch.Tensor = torch.tensor([1.0, 0.0, 0.0, 0.0])
+        self.right_pos: torch.Tensor = torch.zeros(3)
+        self.right_quat: torch.Tensor = torch.tensor([1.0, 0.0, 0.0, 0.0])
 
         self.zero_link_pos_local = torch.tensor(
             [
@@ -131,16 +82,16 @@ class OculusPublisher:
         self.zero_link_quat_local[:, 0] = 1.0
         self.zero_link_lin_vel = torch.zeros(6, 3)
         self.zero_link_ang_vel = torch.zeros(6, 3)
-        self.timestamp = 0
 
     def _convert_to_target(
-        self, pos_o: torch.Tensor, quat_o_wxyz: torch.Tensor
+        self, pos_o: torch.Tensor, quat_o_xyzw: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         pos_t = A * pos_o
         R_t   = A * R_o * A^T   (A is orthogonal, even though det=-1)
         quat_t = rotmat_to_quat(R_t)
         """
+        quat_o_wxyz = quat_o_xyzw[[3, 0, 1, 2]]
         pos_t = self.A @ pos_o
 
         R_o = quat_to_rotmat(quat_o_wxyz[None, :])[0]
@@ -155,12 +106,9 @@ class OculusPublisher:
         yaw_q = quat_from_euler(e[None, :])[0]
         return yaw_q
 
-    def _publish_global(
-        self, label: str, pos_z: torch.Tensor, quat_z: torch.Tensor, recv_time: float
-    ) -> None:
-        self.r.set(f"{self.key}:global:{label}:pos_zup", json.dumps(_to_list(pos_z)))
-        self.r.set(f"{self.key}:global:{label}:quat_wxyz_zup", json.dumps(_to_list(quat_z)))
-        self.r.set(f"{self.key}:global:{label}:recv_time", recv_time)
+    def _publish_global(self, label: str, pos: torch.Tensor, quat: torch.Tensor) -> None:
+        self.r.set(f"{self.key}:global:{label}:pos", json.dumps(_to_list(pos)))
+        self.r.set(f"{self.key}:global:{label}:quat", json.dumps(_to_list(quat)))
 
     def _publish_motion_refs(
         self,
@@ -168,6 +116,7 @@ class OculusPublisher:
         left_quat_local: torch.Tensor,
         right_pos_local: torch.Tensor,
         right_quat_local: torch.Tensor,
+        frame_id: int,
     ) -> None:
         link_pos_local = self.zero_link_pos_local.clone()
         link_pos_local[2] = left_pos_local
@@ -182,85 +131,67 @@ class OculusPublisher:
         self.r.set(f"{self.key}:motion:link_quat_local", json.dumps(_to_list(link_quat_local)))
         self.r.set(f"{self.key}:motion:link_lin_vel", json.dumps(_to_list(link_lin_vel)))
         self.r.set(f"{self.key}:motion:link_ang_vel", json.dumps(_to_list(link_ang_vel)))
-        self.r.set(f"{self.key}:timestamp:link_pos_local", self.timestamp)
-        self.r.set(f"{self.key}:timestamp:link_quat_local", self.timestamp)
-        self.r.set(f"{self.key}:timestamp:link_lin_vel", self.timestamp)
-        self.r.set(f"{self.key}:timestamp:link_ang_vel", self.timestamp)
-        self.timestamp += 1
+        self.r.set(f"{self.key}:timestamp:link_pos_local", frame_id)
+        self.r.set(f"{self.key}:timestamp:link_quat_local", frame_id)
+        self.r.set(f"{self.key}:timestamp:link_lin_vel", frame_id)
+        self.r.set(f"{self.key}:timestamp:link_ang_vel", frame_id)
+        # print(f"[oculus_publisher] Published motion refs for frame {frame_id}")
 
     def run(self) -> None:
         print("=" * 80)
-        print("[oculus_publisher] Started (Z-up + head-relative local controller poses)")
-        print(f"UDP bind: {self.sock.getsockname()[0]}:{self.sock.getsockname()[1]}")
+        print("[oculus_publisher] Started")
+        print(f"UDP bind: {self.client.udp_host}:{self.client.udp_port}")
         print(f"Redis key prefix: {self.key}")
-        print("Incoming packet: label,x,y,z,qx,qy,qz,qw (xyzw incoming; wxyz stored)")
         print("=" * 80)
+
+        self.client.start()
 
         try:
             while True:
-                # Parse UDP packet
-                data, _addr = self.sock.recvfrom(4096)
-                recv_time = time.time()
-                msg = data.decode("utf-8", errors="ignore")
-                parsed = _parse_packet(msg)
-                if parsed is None:
-                    continue
+                data = self.client.get_frame()
+                start_time = time.time()
 
                 # Frame conversion
-                label, pos_w, quat_w = parsed
-                pos_z, quat_z = self._convert_to_target(pos_w, quat_w)
-                if label == "hmd":
-                    self.hmd_pos_z, self.hmd_quat_z, self.hmd_recv_time = pos_z, quat_z, recv_time
-                elif label == "left":
-                    self.left_pos_z, self.left_quat_z, self.left_recv_time = (
-                        pos_z,
-                        quat_z,
-                        recv_time,
-                    )
-                elif label == "right":
-                    self.right_pos_z, self.right_quat_z, self.right_recv_time = (
-                        pos_z,
-                        quat_z,
-                        recv_time,
-                    )
+                self.hmd_pos, self.hmd_quat = self._convert_to_target(data.hmd_pos, data.hmd_quat)
+                self.left_pos, self.left_quat = self._convert_to_target(
+                    data.left_pos, data.left_quat
+                )
+                self.right_pos, self.right_quat = self._convert_to_target(
+                    data.right_pos, data.right_quat
+                )
 
                 # Publish global pose
-                self._publish_global(label, pos_z, quat_z, recv_time)
+                self._publish_global("hmd", self.hmd_pos, self.hmd_quat)
+                self._publish_global("left", self.left_pos, self.left_quat)
+                self._publish_global("right", self.right_pos, self.right_quat)
+                self.r.set(f"{self.key}:global:recvtime", data.recv_time)
 
                 # Publish motion references if HMD + both controllers
-                if self.hmd_pos_z is None or self.hmd_quat_z is None:
-                    continue
-                head_yaw_q = self._head_yaw(self.hmd_quat_z)
+                head_yaw_q = self._head_yaw(self.hmd_quat)
                 inv_head_yaw = quat_inv(head_yaw_q[None, :])[0]
 
                 def _localize(
-                    ctrl_pos_z: torch.Tensor, ctrl_quat_z: torch.Tensor, inv_head_yaw: torch.Tensor
+                    ctrl_pos: torch.Tensor, ctrl_quat: torch.Tensor, inv_head_yaw: torch.Tensor
                 ) -> tuple[torch.Tensor, torch.Tensor]:
-                    rel = ctrl_pos_z.clone()
-                    assert self.hmd_pos_z is not None
-                    rel[0:2] -= self.hmd_pos_z[0:2]
+                    rel = ctrl_pos.clone()
+                    assert self.hmd_pos is not None
+                    rel[0:2] -= self.hmd_pos[0:2]
                     pos_local = quat_apply(inv_head_yaw[None, :], rel[None, :])[0]
-                    quat_local = quat_mul(inv_head_yaw[None, :], ctrl_quat_z[None, :])[0]
+                    quat_local = quat_mul(inv_head_yaw[None, :], ctrl_quat[None, :])[0]
                     return pos_local, quat_local
 
-                if self.left_recv_time is not None and self.right_recv_time is not None:
-                    curr_time = time.time()
-                    if curr_time - self.last_publish_time >= 1.0 / self.freq_hz:
-                        self.last_publish_time = curr_time
-                        assert self.left_pos_z is not None
-                        assert self.left_quat_z is not None
-                        lp, lq = _localize(self.left_pos_z, self.left_quat_z, inv_head_yaw)
-                        assert self.right_pos_z is not None
-                        assert self.right_quat_z is not None
-                        rp, rq = _localize(self.right_pos_z, self.right_quat_z, inv_head_yaw)
-                        self._publish_motion_refs(lp, lq, rp, rq)
-                    else:
-                        pass
+                lp, lq = _localize(self.left_pos, self.left_quat, inv_head_yaw)
+                rp, rq = _localize(self.right_pos, self.right_quat, inv_head_yaw)
+                self._publish_motion_refs(lp, lq, rp, rq, data.frame_id)
+
+                curr_time = time.time()
+                if curr_time - start_time >= 1.0 / self.freq_hz:
+                    time.sleep(max(0.0, 1.0 / self.freq_hz - (curr_time - start_time)))
 
         except KeyboardInterrupt:
             print("\n[oculus_publisher] Stopped by user.")
         finally:
-            self.sock.close()
+            self.client.close()
 
 
 if __name__ == "__main__":
