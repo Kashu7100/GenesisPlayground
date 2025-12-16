@@ -12,19 +12,23 @@ class OculusFrame:
     # Left-handed coordinate system, Y-up, quat is xyzw
     frame_id: int
     recv_time: float
-    hmd_pos: torch.Tensor
-    left_pos: torch.Tensor
-    right_pos: torch.Tensor
-    hmd_quat: torch.Tensor
-    left_quat: torch.Tensor
-    right_quat: torch.Tensor
+    h_pos: torch.Tensor
+    l_pos: torch.Tensor
+    r_pos: torch.Tensor
+    h_quat: torch.Tensor
+    l_quat: torch.Tensor
+    r_quat: torch.Tensor
+    l_buttons: int
+    r_buttons: int
 
 
 class OculusClient:
     """
     - Format:
-        FRAME,<frame_id>,HMD,<8>,LEFT,<8>,RIGHT,<8>
-        <8> = px,py,pz,qx,qy,qz,qw
+        FRAME,<frame_id>,HPOSE,<8>,LPOSE,<8>,LB,<int>,RPOSE,<8>,RB,<int>
+        HPOSE/LPOSE/RPOSE = px,py,pz,qx,qy,qz,qw
+        LB = LX,LY,LTrigger,LGrip,LClick
+        RB = RA,RB,RTrigger,RGrip,RClick
     """
 
     def __init__(
@@ -68,12 +72,14 @@ class OculusClient:
         return OculusFrame(
             frame_id=raw["frame_id"],
             recv_time=raw["recv_time"],
-            hmd_pos=to_tensor(raw["hmd"]["pos"]),
-            left_pos=to_tensor(raw["left"]["pos"]),
-            right_pos=to_tensor(raw["right"]["pos"]),
-            hmd_quat=to_tensor(raw["hmd"]["quat"]),
-            left_quat=to_tensor(raw["left"]["quat"]),
-            right_quat=to_tensor(raw["right"]["quat"]),
+            h_pos=to_tensor(raw["h_pose"]["pos"]),
+            l_pos=to_tensor(raw["l_pose"]["pos"]),
+            r_pos=to_tensor(raw["r_pose"]["pos"]),
+            h_quat=to_tensor(raw["h_pose"]["quat"]),
+            l_quat=to_tensor(raw["l_pose"]["quat"]),
+            r_quat=to_tensor(raw["r_pose"]["quat"]),
+            l_buttons=raw["lb"],
+            r_buttons=raw["rb"],
         )
 
     # ---------------- internal ----------------
@@ -108,21 +114,25 @@ class OculusClient:
             return None
 
         # parse blocks
-        hmd = self._parse_block(parts, "HMD")
-        left = self._parse_block(parts, "LEFT")
-        right = self._parse_block(parts, "RIGHT")
-        if hmd is None or left is None or right is None:
+        h_pose = self._parse_pose_block(parts, "HPOSE")
+        l_pose = self._parse_pose_block(parts, "LPOSE")
+        r_pose = self._parse_pose_block(parts, "RPOSE")
+        if h_pose is None or l_pose is None or r_pose is None:
             return None
+        lb = self._parse_button_block(parts, "LB")
+        rb = self._parse_button_block(parts, "RB")
 
         return {
             "frame_id": frame_id,
             "recv_time": recv_time,
-            "hmd": hmd,
-            "left": left,
-            "right": right,
+            "h_pose": h_pose,
+            "l_pose": l_pose,
+            "r_pose": r_pose,
+            "lb": lb,
+            "rb": rb,
         }
 
-    def _parse_block(self, parts: list[str], label: str) -> dict[str, list[float]] | None:
+    def _parse_pose_block(self, parts: list[str], label: str) -> dict[str, list[float]] | None:
         try:
             i = parts.index(label)
         except ValueError:
@@ -140,3 +150,16 @@ class OculusClient:
         except ValueError:
             return None
         return {"pos": [px, py, pz], "quat": [qx, qy, qz, qw]}
+
+    def _parse_button_block(self, parts: list[str], label: str) -> int | None:
+        try:
+            i = parts.index(label)
+        except ValueError:
+            return None
+        if i + 1 >= len(parts):
+            return None
+        try:
+            b = int(parts[i + 1])
+        except ValueError:
+            return None
+        return b

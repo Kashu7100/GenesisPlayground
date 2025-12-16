@@ -26,13 +26,15 @@ class OculusPublisher:
 
     Redis keys:
         Global Z-up:
-        - {key}:global:hmd:pos        [3]
-        - {key}:global:hmd:quat       [4]
-        - {key}:global:left:pos       [3]
-        - {key}:global:left:quat      [4]
-        - {key}:global:right:pos      [3]
-        - {key}:global:right:quat     [4]
-        - {key}:global:recvtime       [1]
+        - {key}:global:h:pos        [3]
+        - {key}:global:h:quat       [4]
+        - {key}:global:l:pos        [3]
+        - {key}:global:l:quat       [4]
+        - {key}:global:l:buttons    [1]
+        - {key}:global:r:buttons    [1]
+        - {key}:global:r:pos        [3]
+        - {key}:global:r:quat       [4]
+        - {key}:global:recvtime     [1]
 
         Motion References:
         - {key}:motion:link_pos_local       [N*3]
@@ -60,12 +62,14 @@ class OculusPublisher:
         )
         self.AT = self.A.t()
 
-        self.hmd_pos: torch.Tensor = torch.zeros(3)
-        self.hmd_quat: torch.Tensor = torch.tensor([1.0, 0.0, 0.0, 0.0])
-        self.left_pos: torch.Tensor = torch.zeros(3)
-        self.left_quat: torch.Tensor = torch.tensor([1.0, 0.0, 0.0, 0.0])
-        self.right_pos: torch.Tensor = torch.zeros(3)
-        self.right_quat: torch.Tensor = torch.tensor([1.0, 0.0, 0.0, 0.0])
+        self.h_pos: torch.Tensor = torch.zeros(3)
+        self.h_quat: torch.Tensor = torch.tensor([1.0, 0.0, 0.0, 0.0])
+        self.l_pos: torch.Tensor = torch.zeros(3)
+        self.l_quat: torch.Tensor = torch.tensor([1.0, 0.0, 0.0, 0.0])
+        self.r_pos: torch.Tensor = torch.zeros(3)
+        self.r_quat: torch.Tensor = torch.tensor([1.0, 0.0, 0.0, 0.0])
+        self.l_buttons: int = 0
+        self.r_buttons: int = 0
 
         self.zero_link_pos_local = torch.tensor(
             [
@@ -105,6 +109,28 @@ class OculusPublisher:
         e[1] = 0.0
         yaw_q = quat_from_euler(e[None, :])[0]
         return yaw_q
+
+    def on_button(self, button: str) -> bool:
+        lb_map = {
+            "LX": 1 << 0,
+            "LY": 1 << 1,
+            "LTrigger": 1 << 2,
+            "LGrip": 1 << 3,
+            "LClick": 1 << 4,
+        }
+        rb_map = {
+            "RA": 1 << 0,
+            "RB": 1 << 1,
+            "RTrigger": 1 << 2,
+            "RGrip": 1 << 3,
+            "RClick": 1 << 4,
+        }
+        if button in lb_map:
+            return (self.l_buttons & lb_map[button]) != 0
+        elif button in rb_map:
+            return (self.r_buttons & rb_map[button]) != 0
+        else:
+            return False
 
     def _publish_global(self, label: str, pos: torch.Tensor, quat: torch.Tensor) -> None:
         self.r.set(f"{self.key}:global:{label}:pos", json.dumps(_to_list(pos)))
@@ -152,36 +178,36 @@ class OculusPublisher:
                 start_time = time.time()
 
                 # Frame conversion
-                self.hmd_pos, self.hmd_quat = self._convert_to_target(data.hmd_pos, data.hmd_quat)
-                self.left_pos, self.left_quat = self._convert_to_target(
-                    data.left_pos, data.left_quat
-                )
-                self.right_pos, self.right_quat = self._convert_to_target(
-                    data.right_pos, data.right_quat
-                )
+                self.h_pos, self.h_quat = self._convert_to_target(data.h_pos, data.h_quat)
+                self.l_pos, self.l_quat = self._convert_to_target(data.l_pos, data.l_quat)
+                self.r_pos, self.r_quat = self._convert_to_target(data.r_pos, data.r_quat)
+                self.l_buttons = data.l_buttons
+                self.r_buttons = data.r_buttons
 
-                # Publish global pose
-                self._publish_global("hmd", self.hmd_pos, self.hmd_quat)
-                self._publish_global("left", self.left_pos, self.left_quat)
-                self._publish_global("right", self.right_pos, self.right_quat)
+                # Publish global info
+                self._publish_global("h", self.h_pos, self.h_quat)
+                self._publish_global("l", self.l_pos, self.l_quat)
+                self._publish_global("r", self.r_pos, self.r_quat)
+                self.r.set(f"{self.key}:global:l:buttons", self.l_buttons)
+                self.r.set(f"{self.key}:global:r:buttons", self.r_buttons)
                 self.r.set(f"{self.key}:global:recvtime", data.recv_time)
 
                 # Publish motion references if HMD + both controllers
-                head_yaw_q = self._head_yaw(self.hmd_quat)
+                head_yaw_q = self._head_yaw(self.h_quat)
                 inv_head_yaw = quat_inv(head_yaw_q[None, :])[0]
 
                 def _localize(
                     ctrl_pos: torch.Tensor, ctrl_quat: torch.Tensor, inv_head_yaw: torch.Tensor
                 ) -> tuple[torch.Tensor, torch.Tensor]:
                     rel = ctrl_pos.clone()
-                    assert self.hmd_pos is not None
-                    rel[0:2] -= self.hmd_pos[0:2]
+                    assert self.h_pos is not None
+                    rel[0:2] -= self.h_pos[0:2]
                     pos_local = quat_apply(inv_head_yaw[None, :], rel[None, :])[0]
                     quat_local = quat_mul(inv_head_yaw[None, :], ctrl_quat[None, :])[0]
                     return pos_local, quat_local
 
-                lp, lq = _localize(self.left_pos, self.left_quat, inv_head_yaw)
-                rp, rq = _localize(self.right_pos, self.right_quat, inv_head_yaw)
+                lp, lq = _localize(self.l_pos, self.l_quat, inv_head_yaw)
+                rp, rq = _localize(self.r_pos, self.r_quat, inv_head_yaw)
                 self._publish_motion_refs(lp, lq, rp, rq, data.frame_id)
 
                 curr_time = time.time()
