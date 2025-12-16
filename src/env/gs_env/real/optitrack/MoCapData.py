@@ -40,7 +40,7 @@ K_PASS = [1, 0, 0]
 # MoCap Frame Classes
 class FramePrefixData:
     def __init__(self, frame_number: int) -> None:
-        self.frame_number = frame_number
+        self.frame_number: int = frame_number
 
     def get_as_string(self, tab_str: str = "  ", level: int = 0) -> str:
         out_tab_str = get_tab_str(tab_str, level)
@@ -50,8 +50,8 @@ class FramePrefixData:
 
 class MarkerData:
     def __init__(self) -> None:
-        self.model_name = ""
-        self.marker_pos_list = []
+        self.model_name: str | bytes = ""
+        self.marker_pos_list: list[list[float] | tuple[float, float, float]] = []
 
     def set_model_name(self, model_name: str | bytes) -> None:
         self.model_name = model_name
@@ -80,8 +80,8 @@ class MarkerData:
 
 class MarkerSetData:
     def __init__(self) -> None:
-        self.marker_data_list = []
-        self.unlabeled_markers = MarkerData()
+        self.marker_data_list: list[MarkerData] = []
+        self.unlabeled_markers: MarkerData = MarkerData()
         self.unlabeled_markers.set_model_name("")
 
     def add_marker_data(self, marker_data: MarkerData) -> int:
@@ -117,7 +117,7 @@ class MarkerSetData:
 
 class LegacyMarkerData:
     def __init__(self) -> None:
-        self.marker_pos_list = []
+        self.marker_pos_list: list[list[float] | tuple[float, float, float]] = []
 
     def add_pos(self, pos: tuple[float, float, float]) -> int:
         self.marker_pos_list.append(copy.deepcopy(pos))
@@ -140,11 +140,11 @@ class LegacyMarkerData:
 
 class RigidBodyMarker:
     def __init__(self) -> None:
-        self.pos = [0.0, 0.0, 0.0]
-        self.id_num = 0
-        self.size = 0
-        self.error = 0.0
-        self.marker_num = -1
+        self.pos: list[float] = [0.0, 0.0, 0.0]
+        self.id_num: int = 0
+        self.size: int = 0
+        self.error: float = 0.0
+        self.marker_num: int = -1
 
     def get_as_string(self, tab_str: str = "  ", level: int = 0) -> str:
         out_tab_str = get_tab_str(tab_str, level)
@@ -169,13 +169,13 @@ class RigidBody:
         pos: list[float] | tuple[float, float, float],
         rot: list[float] | tuple[float, float, float, float],
     ) -> None:
-        self.id_num = new_id
-        self.pos = pos
-        self.rot = rot
-        self.rb_marker_list = []
-        self.tracking_valid = False
-        self.error = 0.0
-        self.marker_num = -1
+        self.id_num: int = new_id
+        self.pos: list[float] | tuple[float, float, float] = pos
+        self.rot: list[float] | tuple[float, float, float, float] = rot
+        self.rb_marker_list: list[RigidBodyMarker] = []
+        self.tracking_valid: bool = False
+        self.error: float = 0.0
+        self.marker_num: int = -1
 
     def add_rigid_body_marker(self, rigid_body_marker: RigidBodyMarker) -> int:
         self.rb_marker_list.append(copy.deepcopy(rigid_body_marker))
@@ -221,7 +221,7 @@ class RigidBody:
 
 class RigidBodyData:
     def __init__(self) -> None:
-        self.rigid_body_list = []
+        self.rigid_body_list: list[RigidBody] = []
 
     def add_rigid_body(self, rigid_body: RigidBody) -> int:
         self.rigid_body_list.append(copy.deepcopy(rigid_body))
@@ -245,8 +245,8 @@ class RigidBodyData:
 
 class Skeleton:
     def __init__(self, new_id: int = 0) -> None:
-        self.id_num = new_id
-        self.rigid_body_list = []
+        self.id_num: int = new_id
+        self.rigid_body_list: list[RigidBody] = []
 
     def add_rigid_body(self, rigid_body: RigidBody) -> int:
         self.rigid_body_list.append(copy.deepcopy(rigid_body))
@@ -266,7 +266,7 @@ class Skeleton:
 
 class SkeletonData:
     def __init__(self) -> None:
-        self.skeleton_list = []
+        self.skeleton_list: list[Skeleton] = []
 
     def add_skeleton(self, new_skeleton: Skeleton) -> None:
         self.skeleton_list.append(copy.deepcopy(new_skeleton))
@@ -297,12 +297,12 @@ class AssetMarkerData:
         residual: float = 0.0,
         marker_num: int = -1,
     ) -> None:
-        self.marker_id = marker_id
-        self.pos = pos
-        self.marker_size = marker_size
-        self.marker_params = marker_params
-        self.residual = residual
-        self.marker_num = marker_num
+        self.marker_id: int = marker_id
+        self.pos: tuple[float, float, float] = pos
+        self.marker_size: float = marker_size
+        self.marker_params: int = marker_params
+        self.residual: float = residual
+        self.marker_num: int = marker_num
 
     def get_as_string(self, tab_str: str = "  ", level: int = 0) -> str:
         out_tab_str = get_tab_str(tab_str, level)
@@ -331,12 +331,12 @@ class AssetRigidBodyData:
         mean_error: float = 0.0,
         param: int = 0,
     ) -> None:
-        self.id_num = new_id
-        self.pos = pos
-        self.rot = rot
-        self.mean_error = mean_error
-        self.param = param
-        self.rb_num = -1
+        self.id_num: int = new_id
+        self.pos: tuple[float, float, float] = pos
+        self.rot: tuple[float, float, float, float] = rot
+        self.mean_error: float = mean_error
+        self.param: int = param
+        self.rb_num: int = -1
 
     def get_as_string(self, tab_str: str = "  ", level: int = 0) -> str:
         out_tab_str = get_tab_str(tab_str, level)
@@ -356,9 +356,9 @@ class AssetRigidBodyData:
 
 class Asset:
     def __init__(self) -> None:
-        self.asset_id = 0
-        self.rigid_body_list = []
-        self.marker_list = []
+        self.asset_id: int = 0
+        self.rigid_body_list: list[AssetRigidBodyData] = []
+        self.marker_list: list[AssetMarkerData] = []
 
     def set_id(self, new_id: int) -> None:
         self.asset_id = new_id
@@ -402,7 +402,7 @@ class Asset:
 
 class AssetData:
     def __init__(self) -> None:
-        self.asset_list = []
+        self.asset_list: list[Asset] = []
 
     def add_asset(self, new_asset: Asset) -> None:
         self.asset_list.append(copy.deepcopy(new_asset))
@@ -432,12 +432,12 @@ class LabeledMarker:
         param: int = 0,
         residual: float = 0.0,
     ) -> None:
-        self.id_num = new_id
-        self.pos = pos
-        self.size = size
-        self.param = param
-        self.residual = residual
-        self.marker_num = -1
+        self.id_num: int = new_id
+        self.pos: list[float] | tuple[float, float, float] = pos
+        self.size: tuple[float, float, float] | float = size
+        self.param: int = param
+        self.residual: float = residual
+        self.marker_num: int = -1
         if type(size) is tuple:
             self.size = size[0]
 
@@ -475,7 +475,7 @@ class LabeledMarker:
 
 class LabeledMarkerData:
     def __init__(self) -> None:
-        self.labeled_marker_list = []
+        self.labeled_marker_list: list[LabeledMarker] = []
 
     def add_labeled_marker(self, labeled_marker: LabeledMarker) -> int:
         self.labeled_marker_list.append(copy.deepcopy(labeled_marker))
@@ -500,7 +500,7 @@ class LabeledMarkerData:
 class ForcePlateChannelData:
     def __init__(self) -> None:
         # list of floats
-        self.frame_list = []
+        self.frame_list: list[float] = []
 
     def add_frame_entry(self, frame_entry: float) -> int:
         self.frame_list.append(copy.deepcopy(frame_entry))
@@ -527,8 +527,8 @@ class ForcePlateChannelData:
 
 class ForcePlate:
     def __init__(self, new_id: int = 0) -> None:
-        self.id_num = new_id
-        self.channel_data_list = []
+        self.id_num: int = new_id
+        self.channel_data_list: list[ForcePlateChannelData] = []
 
     def add_channel_data(self, channel_data: ForcePlateChannelData) -> int:
         self.channel_data_list.append(copy.deepcopy(channel_data))
@@ -548,7 +548,7 @@ class ForcePlate:
 
 class ForcePlateData:
     def __init__(self) -> None:
-        self.force_plate_list = []
+        self.force_plate_list: list[ForcePlate] = []
 
     def add_force_plate(self, force_plate: ForcePlate) -> int:
         self.force_plate_list.append(copy.deepcopy(force_plate))
@@ -574,7 +574,7 @@ class ForcePlateData:
 class DeviceChannelData:
     def __init__(self) -> None:
         # list of floats
-        self.frame_list = []
+        self.frame_list: list[float] = []
 
     def add_frame_entry(self, frame_entry: float) -> int:
         self.frame_list.append(copy.deepcopy(frame_entry))
@@ -601,8 +601,8 @@ class DeviceChannelData:
 
 class Device:
     def __init__(self, new_id: int) -> None:
-        self.id_num = new_id
-        self.channel_data_list = []
+        self.id_num: int = new_id
+        self.channel_data_list: list[DeviceChannelData] = []
 
     def add_channel_data(self, channel_data: DeviceChannelData) -> int:
         self.channel_data_list.append(copy.deepcopy(channel_data))
@@ -623,7 +623,7 @@ class Device:
 
 class DeviceData:
     def __init__(self) -> None:
-        self.device_list = []
+        self.device_list: list[Device] = []
 
     def add_device(self, device: Device) -> int:
         self.device_list.append(copy.deepcopy(device))
@@ -646,17 +646,17 @@ class DeviceData:
 
 class FrameSuffixData:
     def __init__(self) -> None:
-        self.timecode = -1
-        self.timecode_sub = -1
-        self.timestamp = -1.0
-        self.stamp_camera_mid_exposure = -1
-        self.stamp_data_received = -1
-        self.stamp_transmit = -1
-        self.prec_timestamp_secs = -1
-        self.prec_timestamp_frac_secs = -1
-        self.param = 0
-        self.is_recording = False
-        self.tracked_models_changed = True
+        self.timecode: int | str = -1
+        self.timecode_sub: int = -1
+        self.timestamp: float = -1.0
+        self.stamp_camera_mid_exposure: int = -1
+        self.stamp_data_received: int = -1
+        self.stamp_transmit: int = -1
+        self.prec_timestamp_secs: int = -1
+        self.prec_timestamp_frac_secs: int = -1
+        self.param: int = 0
+        self.is_recording: bool = False
+        self.tracked_models_changed: bool = True
 
     def get_as_string(self, tab_str: str = "  ", level: int = 0) -> str:
         out_tab_str = get_tab_str(tab_str, level)
@@ -696,16 +696,16 @@ class FrameSuffixData:
 class MoCapData:
     def __init__(self) -> None:
         # Packet Parts
-        self.prefix_data = None
-        self.marker_set_data = None
-        self.legacy_other_markers = None
-        self.rigid_body_data = None
-        self.asset_data = None
-        self.skeleton_data = None
-        self.labeled_marker_data = None
-        self.force_plate_data = None
-        self.device_data = None
-        self.suffix_data = None
+        self.prefix_data: FramePrefixData | None = None
+        self.marker_set_data: MarkerSetData | None = None
+        self.legacy_other_markers: LegacyMarkerData | None = None
+        self.rigid_body_data: RigidBodyData | None = None
+        self.asset_data: AssetData | None = None
+        self.skeleton_data: SkeletonData | None = None
+        self.labeled_marker_data: LabeledMarkerData | None = None
+        self.force_plate_data: ForcePlateData | None = None
+        self.device_data: DeviceData | None = None
+        self.suffix_data: FrameSuffixData | None = None
 
     def set_prefix_data(self, new_prefix_data: FramePrefixData) -> None:
         self.prefix_data = new_prefix_data

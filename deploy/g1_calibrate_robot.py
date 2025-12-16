@@ -136,7 +136,7 @@ def main(args: argparse.Namespace) -> None:
         while True:
             key = getch()
             if key == "c":
-                link_poses = optitrack_env.get_tracked_links(force_refresh=True)
+                link_poses = optitrack_env.get_tracked_links()
                 qpos = real_env.dof_pos[0].cpu().numpy().astype(np.float32)
                 data = {
                     "link_poses": link_poses,

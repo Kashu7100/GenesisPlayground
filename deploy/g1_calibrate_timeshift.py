@@ -105,7 +105,7 @@ def main(args: argparse.Namespace) -> None:
         dof_pos = (
             real_env.dof_pos[0, dof_idx].cpu().item() - real_env.robot.default_dof_pos[dof_idx]
         )
-        link_pos = optitrack_env.get_tracked_links(force_refresh=False)[args.link][0]
+        link_pos = optitrack_env.get_tracked_links()[args.link][0]
         dof_pos_list.append(dof_pos)
         link_pos_list.append(link_pos[0])  # x position
         real_env.apply_action(action)

@@ -30,12 +30,7 @@ import copy
 import time
 from . import DataDescriptions as DataDescriptions
 from . import MoCapData as MoCapData
-import numpy as np
 from collections.abc import Callable
-
-# This mapping shouldn't be done here
-# TODO: Move this to a higher level (optitrack_env + optitrack_publisher)
-from .optitrack_config import RIGID_BODY_ID_MAP
 
 
 def trace(*args) -> None:
@@ -133,8 +128,6 @@ class NatNetClient:
         self.data_socket = None
 
         self.stop_threads = False
-
-        self.rigid_body_id_map = RIGID_BODY_ID_MAP
 
         # Latest MoCap data
         self._latest_mocap_lock = threading.Lock()
@@ -2618,33 +2611,29 @@ class NatNetClient:
         if self.data_thread is not None and self.data_thread.is_alive():
             self.data_thread.join()
 
-    def get_frame(self) -> dict[str, list[np.typing.NDArray[np.float32]]]:
+    def get_frame(self) -> dict[int, list[list[float]]]:
+        """
+        Format: id_num:[[px,py,pz],[rx,ry,rz,rw]],
+        """
         # get frame from latest mocap data
         self._latest_mocap_event.wait()
         with self._latest_mocap_lock:
             mocap_data = self._latest_mocap_data
         mocap_data = copy.deepcopy(mocap_data)
 
-        assert isinstance(mocap_data.prefix_data, MoCapData.FramePrefixData)
-        self.latest_frame_number = mocap_data.prefix_data.frame_number
-        frame = {}
+        if mocap_data.prefix_data is not None:
+            self.latest_frame_number = mocap_data.prefix_data.frame_number
+        frame: dict[int, list[list[float]]] = {}
 
-        assert isinstance(mocap_data.skeleton_data, MoCapData.SkeletonData)
-        if len(mocap_data.skeleton_data.skeleton_list) > 0:
-            skeleton = mocap_data.skeleton_data.skeleton_list[0]
-            for rb in skeleton.rigid_body_list:
-                if rb.id_num in self.rigid_body_id_map:
-                    frame[self.rigid_body_id_map[rb.id_num]] = [rb.pos, np.roll(rb.rot, 1)]
-                else:
-                    print(f"unmatched skeleton link rb.id_num: {rb.id_num}")
+        if mocap_data.skeleton_data is not None:
+            for skeleton in mocap_data.skeleton_data.skeleton_list:
+                for rb in skeleton.rigid_body_list:
+                    assert isinstance(rb, MoCapData.RigidBody)
+                    frame[rb.id_num] = [list(rb.pos), list(rb.rot)]
 
-        rigid_body = mocap_data.rigid_body_data
-        assert isinstance(rigid_body, MoCapData.RigidBodyData)
-        for rb in rigid_body.rigid_body_list:
-            if rb.id_num in self.rigid_body_id_map:
-                frame[self.rigid_body_id_map[rb.id_num]] = [rb.pos, np.roll(rb.rot, 1)]
-            else:
-                print(f"unmatched rigid body rb.id_num: {rb.id_num}")
+        if mocap_data.rigid_body_data is not None:
+            for rb in mocap_data.rigid_body_data.rigid_body_list:
+                frame[rb.id_num] = [list(rb.pos), list(rb.rot)]
 
         return frame
 

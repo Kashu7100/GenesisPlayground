@@ -10,6 +10,7 @@ from gs_env.common.utils.math_utils import transform_RT_by
 from gs_env.real.config.schema import OptitrackEnvArgs
 
 from .optitrack.NatNetClient import setup_optitrack
+from .optitrack.optitrack_config import RIGID_BODY_ID_MAP
 
 _DEFAULT_DEVICE = torch.device("cpu")
 
@@ -40,8 +41,8 @@ class OptitrackEnv(BaseEnv):
         if not self._client:
             print("Failed to setup OptiTrack client")
             exit(1)
-        self._client.get_frame()  # eventually this will stuck, so we put it at the beginning
 
+        self.rigid_body_id_map: dict[int, str] = RIGID_BODY_ID_MAP
         self.robot_link_offsets = {}
         with open(self._args.offset_config) as f:
             off = yaml.safe_load(f)
@@ -73,22 +74,22 @@ class OptitrackEnv(BaseEnv):
 
     def get_tracked_links(
         self,
-        force_refresh: bool = False,
     ) -> dict[str, tuple[np.typing.NDArray[np.float32], np.typing.NDArray[np.float32]]]:
         """
-        Get all tracked links.
-        Force refresh will force to get a new frame from OptiTrack,
-        only if your requesting frequency is lower than the OptiTrack update rate.
-        Return a dictionary of link name to (position, quaternion).
+        Get all tracked links. Will always get the latest frame.
         """
         aligned_poses = {}
         frame = self._client.get_frame()
-        if force_refresh:
-            frame = self._client.get_frame()
-            # to ensure we get the latest frame if not called for a while
-        for name, (pos, quat) in frame.items():
+        for rb_id, (pos, quat) in frame.items():
+            if rb_id not in self.rigid_body_id_map:
+                raise ValueError(f"Unmapped RB ID {rb_id}!! Please check RIGID_BODY_ID_MAP.")
+            name = self.rigid_body_id_map[rb_id]
             if name in self._args.tracked_link_names:
-                new_pos, new_quat = self._calculate_tracked_link_by_name(name, pos, quat)
+                pos_array = np.array(pos, dtype=np.float32)
+                quat_array = np.roll(np.array(quat, dtype=np.float32), 1)
+                new_pos, new_quat = self._calculate_tracked_link_by_name(
+                    name, pos_array, quat_array
+                )
                 aligned_poses[name] = (new_pos, new_quat)
         return aligned_poses
 
