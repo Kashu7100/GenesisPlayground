@@ -502,7 +502,7 @@ EnvArgsRegistry["g1_motion"] = MotionEnvArgs(
     },
     adaptive_termination_ratio=None,
     deviation_thresholds={
-        "base_quat_error": 0.4,
+        "base_quat_error": 1.0,
         "base_lin_vel_error": 2.0,
     },
     observed_steps={
@@ -524,6 +524,12 @@ EnvArgsRegistry["g1_motion"] = MotionEnvArgs(
             1,
         ],
         "link_quat_local": [
+            1,
+        ],
+        "link_lin_vel": [
+            1,
+        ],
+        "link_ang_vel": [
             1,
         ],
         "foot_contact": [
