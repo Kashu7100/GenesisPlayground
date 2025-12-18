@@ -97,6 +97,16 @@ def main(
         # Load checkpoint and env_args
         policy, env_args = load_checkpoint_and_env_args(exp_name, num_ckpt, device)
 
+    tracking_link_names = getattr(env_args, "tracking_link_names", [])
+    num_tracking_links = len(tracking_link_names)
+
+    # Initialize Redis client with tracking links
+    redis_client = RedisClient(
+        url=redis_url, key=redis_key, device=device, num_tracking_links=num_tracking_links
+    )
+    motion_elements = list(getattr(env_args, "observed_steps", {}).keys())
+    redis_client.set_motion_obs_elements(motion_elements)
+
     if sim:
         print("Running in SIMULATION mode")
         import gs_env.sim.envs as envs
@@ -126,16 +136,6 @@ def main(
         while not env.robot.Start:
             time.sleep(0.1)
 
-    tracking_link_names = getattr(env_args, "tracking_link_names", [])
-    num_tracking_links = len(tracking_link_names)
-
-    # Initialize Redis client with tracking links
-    redis_client = RedisClient(
-        url=redis_url, key=redis_key, device=device, num_tracking_links=num_tracking_links
-    )
-    motion_elements = list(getattr(env_args, "observed_steps", {}).keys())
-    redis_client.set_motion_obs_elements(motion_elements)
-
     if view and sim:
         print("=" * 80)
         print("Starting motion visualization")
@@ -163,6 +163,8 @@ def main(
 
         last_update_time = time.time()
 
+        start_step_time = time.time()
+        step_id = 0
         while True:
             # Control loop timing (50 Hz)
             if time.time() - last_update_time < 0.02:
@@ -198,6 +200,12 @@ def main(
                         env.scene.set_obj_pose(link_name, pos=ref_link_pos, quat=ref_link_quat)  # type: ignore
 
             env.scene.scene.step(refresh_visualizer=False)  # type: ignore
+            step_id += 1
+            if step_id % 100 == 0 and step_id > 0:
+                print(
+                    f"Step {step_id}: Average step time: {(time.time() - start_step_time) / 100:.4f}s"
+                )
+                start_step_time = time.time()
 
     def deploy_loop() -> None:
         nonlocal env, redis_client, tracking_link_names
@@ -304,12 +312,12 @@ def main(
 
             # Control loop timing (50 Hz)
             if time.time() < next_step_time:
-                next_step_time = next_step_time + 0.02
                 time.sleep(max(0, next_step_time - time.time()))
+                next_step_time = next_step_time + 0.02
             else:
                 next_step_time = time.time() + 0.02
 
-            if step_id % 100 == 0:
+            if step_id % 100 == 0 and step_id > 0:
                 print(f"Step {step_id}: Average inference time: {total_inference_time / 100:.4f}s")
                 print(f"Step {step_id}: FPS: {100 / (time.time() - start_step_time):.2f}")
                 total_inference_time = 0
