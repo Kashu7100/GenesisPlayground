@@ -87,6 +87,15 @@ class OculusPublisher:
         self.zero_link_lin_vel = torch.zeros(6, 3)
         self.zero_link_ang_vel = torch.zeros(6, 3)
 
+        self.l_wrist_quat_inv = torch.tensor([1.0, 0.0, 0.0, 0.0])
+        self.r_wrist_quat_inv = torch.tensor([1.0, 0.0, 0.0, 0.0])
+        self.g1_shoulder_y = 0.100
+        self.g1_arm_length = 0.378
+        self.g1_shoulder_z = 1.082
+        self.aug_shoulder_y = self.g1_shoulder_y * 1.0
+        self.aug_arm_length = self.g1_arm_length * 1.0
+        self.aug_shoulder_z = self.g1_shoulder_z * 1.0
+
     def _convert_to_target(
         self, pos_o: torch.Tensor, quat_o_xyzw: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -110,7 +119,47 @@ class OculusPublisher:
         yaw_q = quat_from_euler(e[None, :])[0]
         return yaw_q
 
-    def on_button(self, button: str) -> bool:
+    def _localize(
+        self, ctrl_pos: torch.Tensor, ctrl_quat: torch.Tensor, inv_head_yaw: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        rel = ctrl_pos.clone()
+        assert self.h_pos is not None
+        rel[0:2] -= self.h_pos[0:2]
+        pos_local = quat_apply(inv_head_yaw[None, :], rel[None, :])[0]
+        quat_local = quat_mul(inv_head_yaw[None, :], ctrl_quat[None, :])[0]
+        return pos_local, quat_local
+
+    def _calibrate(
+        self,
+        left_pos_local: torch.Tensor,
+        left_quat_local: torch.Tensor,
+        right_pos_local: torch.Tensor,
+        right_quat_local: torch.Tensor,
+    ) -> None:
+        self.l_wrist_quat_inv = quat_inv(left_quat_local)
+        self.r_wrist_quat_inv = quat_inv(right_quat_local)
+        self.aug_shoulder_y = (left_pos_local[1].item() - right_pos_local[1].item()) / 2.0
+        self.aug_arm_length = (left_pos_local[0].item() + right_pos_local[0].item()) / 2.0
+        self.aug_shoulder_z = (left_pos_local[2].item() + right_pos_local[2].item()) / 2.0
+
+    def _rescale(
+        self,
+        pos_local: torch.Tensor,
+        quat_local: torch.Tensor,
+        ys: float,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        # ys = 1 for left (y+), -1 for right (y-)
+        wrist_quat_inv = self.l_wrist_quat_inv if ys > 0 else self.r_wrist_quat_inv
+        quat_local_rescaled = quat_mul(quat_local, wrist_quat_inv)
+        pos_local_rescaled = pos_local.clone()
+        pos_local_rescaled[0] = pos_local_rescaled[0] * (self.g1_arm_length / self.aug_arm_length)
+        pos_local_rescaled[1] = (pos_local_rescaled[1] - ys * self.aug_shoulder_y) * (
+            self.g1_arm_length / self.aug_arm_length
+        ) + ys * self.g1_shoulder_y
+        pos_local_rescaled[2] = pos_local_rescaled[2] * (self.g1_shoulder_z / self.aug_shoulder_z)
+        return pos_local_rescaled, quat_local_rescaled
+
+    def _on_button(self, button: str) -> bool:
         lb_map = {
             "LX": 1 << 0,
             "LY": 1 << 1,
@@ -192,22 +241,18 @@ class OculusPublisher:
                 self.r.set(f"{self.key}:global:r:buttons", self.r_buttons)
                 self.r.set(f"{self.key}:global:recvtime", data.recv_time)
 
-                # Publish motion references if HMD + both controllers
+                # Compute local pose
                 head_yaw_q = self._head_yaw(self.h_quat)
                 inv_head_yaw = quat_inv(head_yaw_q[None, :])[0]
+                lp, lq = self._localize(self.l_pos, self.l_quat, inv_head_yaw)
+                rp, rq = self._localize(self.r_pos, self.r_quat, inv_head_yaw)
 
-                def _localize(
-                    ctrl_pos: torch.Tensor, ctrl_quat: torch.Tensor, inv_head_yaw: torch.Tensor
-                ) -> tuple[torch.Tensor, torch.Tensor]:
-                    rel = ctrl_pos.clone()
-                    assert self.h_pos is not None
-                    rel[0:2] -= self.h_pos[0:2]
-                    pos_local = quat_apply(inv_head_yaw[None, :], rel[None, :])[0]
-                    quat_local = quat_mul(inv_head_yaw[None, :], ctrl_quat[None, :])[0]
-                    return pos_local, quat_local
+                if self._on_button("RB") and self._on_button("RTrigger"):
+                    self._calibrate(lp, lq, rp, rq)
 
-                lp, lq = _localize(self.l_pos, self.l_quat, inv_head_yaw)
-                rp, rq = _localize(self.r_pos, self.r_quat, inv_head_yaw)
+                lp, lq = self._rescale(lp, lq, 1)
+                rp, rq = self._rescale(rp, rq, -1)
+
                 self._publish_motion_refs(lp, lq, rp, rq, data.frame_id)
 
                 curr_time = time.time()

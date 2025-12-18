@@ -568,7 +568,7 @@ class LeggedRobotEnv(BaseEnv):
 
     def get_link_pose(self, link_idx_local: int) -> tuple[torch.Tensor, torch.Tensor]:
         assert self.num_envs == 1, "Only support single environment for getting link pose"
-        self._update_buffers()
+        self.update_buffers()
         link_pos = self.link_positions[0][link_idx_local]
         link_quat = self.link_quaternions[0][link_idx_local]
         return link_pos, link_quat
