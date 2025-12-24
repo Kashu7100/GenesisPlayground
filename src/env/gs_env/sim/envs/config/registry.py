@@ -5,10 +5,8 @@ from gs_env.sim.envs.config.schema import (
     MotionEnvArgs,
     WalkingEnvArgs,
 )
-from gs_env.sim.objects.config.registry import ObjectArgsRegistry
 from gs_env.sim.robots.config.registry import RobotArgsRegistry
 from gs_env.sim.scenes.config.registry import SceneArgsRegistry
-from gs_env.sim.sensors.config.registry import SensorArgsRegistry
 
 # ------------------------------------------------------------
 # Genesis init
@@ -27,47 +25,15 @@ GenesisInitArgsRegistry["default"] = GenesisInitArgs(
 
 
 # ------------------------------------------------------------
-# Manipulation
+# Environment
 # ------------------------------------------------------------
 
 
 EnvArgsRegistry: dict[str, EnvArgs] = {}
 
-EnvArgsRegistry["goal_reach_default"] = EnvArgs(
-    env_name="GoalReachingEnv",
-    gs_init_args=GenesisInitArgsRegistry["default"],
-    scene_args=SceneArgsRegistry["flat_scene_default"],
-    robot_args=RobotArgsRegistry["franka_default"],
-    objects_args=[ObjectArgsRegistry["box_default"]],
-    sensors_args=[
-        SensorArgsRegistry["oak_camera_default"],
-        SensorArgsRegistry["ee_link_pos"],
-        SensorArgsRegistry["ee_link_quat"],
-        SensorArgsRegistry["joint_angles"],
-        SensorArgsRegistry["gripper_width"],
-    ],
-    reward_term="reward",
-    reward_args={
-        "ActionL2Penalty": 0.0,
-        "KeypointsAlign": 1.0,
-    },
-    img_resolution=(480, 270),
-)
-
-
-EnvArgsRegistry["pick_cube_default"] = EnvArgs(
-    env_name="GoalReachingEnv",
-    gs_init_args=GenesisInitArgsRegistry["default"],
-    scene_args=SceneArgsRegistry["flat_scene_default"],
-    robot_args=RobotArgsRegistry["franka_teleop"],
-    objects_args=[ObjectArgsRegistry["box_default"]],
-    sensors_args=[],
-    reward_args={},
-    img_resolution=(480, 270),
-)
 
 # ------------------------------------------------------------
-# G1 Configuration
+# G1 Walking
 # ------------------------------------------------------------
 
 EnvArgsRegistry["g1_walk"] = WalkingEnvArgs(

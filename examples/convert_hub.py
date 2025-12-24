@@ -1,20 +1,20 @@
 import os
 import pickle
 import time
-import joblib
 from pathlib import Path
 from typing import Any, cast
 
 import gs_env.sim.envs as gs_envs
+import joblib
 import torch
-from gs_env.common.utils.math_utils import quat_to_euler
-from gs_env.sim.envs.config.registry import EnvArgsRegistry
-from gs_env.sim.envs.config.schema import MotionEnvArgs
-from gs_env.sim.scenes.config.registry import SceneArgsRegistry
 from gs_env.common.utils.math_utils import (
     quat_from_euler,
     quat_mul,
+    quat_to_euler,
 )
+from gs_env.sim.envs.config.registry import EnvArgsRegistry
+from gs_env.sim.envs.config.schema import MotionEnvArgs
+from gs_env.sim.scenes.config.registry import SceneArgsRegistry
 
 
 def twist_to_motion_data(
@@ -79,6 +79,7 @@ def twist_to_motion_data(
     link_pos_list = []
     link_quat_list = []
     foot_contact_list = []
+
     def run() -> dict[str, Any]:
         nonlocal env, data, motion_data, show_viewer, dof_index
         last_update_time = time.time()
@@ -128,7 +129,7 @@ def twist_to_motion_data(
                     )
 
             if show_viewer:
-                env.scene.scene.step(refresh_visualizer=False)
+                env.scene.scene.step()
                 while time.time() - last_update_time < 1 / motion_data["fps"]:
                     time.sleep(0.01)
                 last_update_time = time.time()
@@ -142,13 +143,7 @@ def twist_to_motion_data(
         return motion_data
 
     try:
-        if show_viewer:
-            import threading
-
-            threading.Thread(target=run).start()
-            env.scene.scene.viewer.run()  # type: ignore
-        else:
-            return run()
+        return run()
     except KeyboardInterrupt:
         return None
 

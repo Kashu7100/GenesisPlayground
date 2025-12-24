@@ -1,4 +1,3 @@
-import platform
 import sys
 from pathlib import Path
 
@@ -198,13 +197,7 @@ def main(
                 print(f"PD Gains: {dof_kp[dof_idx]:.2f}, {dof_kd[dof_idx]:.2f}")
 
     try:
-        if platform.system() == "Darwin" and show_viewer:
-            import threading
-
-            threading.Thread(target=run_pd_test).start()
-            env.scene.scene.viewer.run()  # type: ignore
-        else:
-            run_pd_test()
+        run_pd_test()
     except KeyboardInterrupt:
         pass
 

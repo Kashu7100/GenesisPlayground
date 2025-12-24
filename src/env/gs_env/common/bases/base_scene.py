@@ -1,10 +1,15 @@
+from __future__ import annotations
+
 import abc
+from typing import TYPE_CHECKING
 
 import genesis as gs
-from genesis.engine.entities.base_entity import Entity
 from genesis.engine.materials.base import Material
 from genesis.options.morphs import Morph
 from genesis.options.surfaces import Surface
+
+if TYPE_CHECKING:
+    from genesis.engine.entities.base_entity import Entity
 
 
 class BaseSimScene(abc.ABC):

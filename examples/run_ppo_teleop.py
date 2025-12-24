@@ -3,7 +3,6 @@
 
 import glob
 import os
-import platform
 from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
@@ -350,9 +349,6 @@ def evaluate_policy(
                     exit()
 
             env.time_since_reset[0] = 0.0
-            if platform.system() == "Darwin":
-                motion_id = (motion_id + 1) % env.motion_lib.num_motions
-                continue
             while True:
                 action = input(
                     "Enter n to play next motion, q to quit, r to replay current motion, p to play previous motion, id to play specific motion\n"
@@ -375,13 +371,7 @@ def evaluate_policy(
                     return
 
     try:
-        if platform.system() == "Darwin" and show_viewer:
-            import threading
-
-            threading.Thread(target=evaluate).start()
-            env.scene.scene.viewer.run()  # type: ignore
-        else:
-            evaluate()
+        evaluate()
     except KeyboardInterrupt:
         pass
 
@@ -536,13 +526,7 @@ def resume_training(
         print(f"Final reward: {train_summary_info['final_reward']:.2f}.")
 
     try:
-        if platform.system() == "Darwin" and show_viewer:
-            import threading
-
-            threading.Thread(target=train).start()
-            env.scene.scene.viewer.run()  # type: ignore
-        else:
-            train()
+        train()
     except KeyboardInterrupt:
         pass
 
@@ -616,13 +600,7 @@ def train_policy(
         print(f"Total reward: {train_summary_info['final_reward']:.2f}.")
 
     try:
-        if platform.system() == "Darwin" and show_viewer:
-            import threading
-
-            threading.Thread(target=train).start()
-            env.scene.scene.viewer.run()  # type: ignore
-        else:
-            train()
+        train()
     except KeyboardInterrupt:
         pass
 
@@ -654,7 +632,7 @@ def view_motion(env_args: Any, show_viewer: bool = False) -> None:
             while env.motion_times[0] + 0.02 < env.motion_lib.get_motion_length(
                 torch.IntTensor([motion_id])
             ):
-                env.scene.scene.step(refresh_visualizer=False)
+                env.scene.scene.step()
                 env.time_since_reset[0] += 0.02
                 env.hard_sync_motion(torch.IntTensor([0]))
                 env.update_buffers()
@@ -676,9 +654,6 @@ def view_motion(env_args: Any, show_viewer: bool = False) -> None:
                     time.sleep(0.01)
                 last_update_time = time.time()
             env.time_since_reset[0] = 0.0
-            if platform.system() == "Darwin":
-                motion_id = (motion_id + 1) % env.motion_lib.num_motions
-                continue
             while True:
                 action = input(
                     "Enter n to play next motion, q to quit, r to replay current motion, p to play previous motion, id to play specific motion\n"
@@ -701,13 +676,7 @@ def view_motion(env_args: Any, show_viewer: bool = False) -> None:
                     return
 
     try:
-        if platform.system() == "Darwin" and show_viewer:
-            import threading
-
-            threading.Thread(target=run).start()
-            env.scene.scene.viewer.run()  # type: ignore
-        else:
-            run()
+        run()
     except KeyboardInterrupt:
         pass
 

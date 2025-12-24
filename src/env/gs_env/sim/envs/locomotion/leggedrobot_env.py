@@ -1,5 +1,4 @@
 import importlib
-import platform
 from typing import Any
 
 import genesis as gs
@@ -46,7 +45,6 @@ class LeggedRobotEnv(BaseEnv):
         self._num_envs = num_envs
         self._device = device
         self._show_viewer = show_viewer
-        self._refresh_visualizer = False if platform.system() == "Darwin" else True
         self._args = args
         self._eval_mode = eval_mode
         self.debug = debug
@@ -381,7 +379,7 @@ class LeggedRobotEnv(BaseEnv):
             self._pre_step()
 
             self._robot.apply_action(action=exec_action)
-            self._scene.scene.step(refresh_visualizer=self._refresh_visualizer)
+            self._scene.scene.step()
             self.torque = torch.max(self.torque, torch.abs(self._robot.torque))
 
         self.update_buffers()

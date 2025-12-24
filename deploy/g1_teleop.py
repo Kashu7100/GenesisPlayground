@@ -1,4 +1,3 @@
-import platform
 import sys
 import time
 from pathlib import Path
@@ -199,7 +198,7 @@ def main(
                         ref_link_quat = quat_mul(ref_quat_yaw, ref_link_quat)
                         env.scene.set_obj_pose(link_name, pos=ref_link_pos, quat=ref_link_quat)  # type: ignore
 
-            env.scene.scene.step(refresh_visualizer=False)  # type: ignore
+            env.scene.scene.step()  # type: ignore
             step_id += 1
             if step_id % 100 == 0 and step_id > 0:
                 print(
@@ -325,23 +324,9 @@ def main(
 
     try:
         if view and sim:
-            # View mode - show motion from Redis
-            if platform.system() == "Darwin" and show_viewer:
-                import threading
-
-                threading.Thread(target=view_loop).start()
-                env.scene.scene.viewer.run()  # type: ignore
-            else:
-                view_loop()
+            view_loop()
         else:
-            # Deploy mode - run policy
-            if platform.system() == "Darwin" and sim and show_viewer:
-                import threading
-
-                threading.Thread(target=deploy_loop).start()
-                env.scene.scene.viewer.run()  # type: ignore
-            else:
-                deploy_loop()
+            deploy_loop()
     except KeyboardInterrupt:
         if not sim:
             env.emergency_stop()

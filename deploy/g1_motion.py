@@ -1,4 +1,3 @@
-import platform
 import sys
 import time
 from pathlib import Path
@@ -280,13 +279,7 @@ def main(
                 total_inference_time = 0
 
     try:
-        if platform.system() == "Darwin" and sim and show_viewer:
-            import threading
-
-            threading.Thread(target=deploy_loop).start()
-            env.scene.scene.viewer.run()  # type: ignore
-        else:
-            deploy_loop()
+        deploy_loop()
     except KeyboardInterrupt:
         if not sim:
             env.emergency_stop()

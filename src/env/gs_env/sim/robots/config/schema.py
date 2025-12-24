@@ -69,22 +69,6 @@ class IKSolver(GenesisEnum):
     PIN = "PIN"  # Pinocchio Solver
 
 
-class ManipulatorRobotArgs(BaseModel):
-    model_config = genesis_pydantic_config(frozen=True)
-
-    material_args: RigidMaterialArgs
-    morph_args: URDFMorphArgs | MJCFMorphArgs
-    visualize_contact: bool
-    vis_mode: str
-    ctrl_type: CtrlType
-    ik_solver: IKSolver
-    ee_link_name: str
-    show_target: bool
-    gripper_link_names: list[str]
-    default_arm_dof: dict[str, float]
-    default_gripper_dof: dict[str, float] | None = None
-
-
 class DomainRandomizationArgs(BaseModel):
     model_config = genesis_pydantic_config(frozen=True)
 

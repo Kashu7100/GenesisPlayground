@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import genesis as gs
 import numpy as np
 import torch
-from genesis.engine.entities.rigid_entity import RigidEntity
-from genesis.engine.solvers.rigid.rigid_solver_decomp import RigidSolver
 from gymnasium import spaces
+
+if TYPE_CHECKING:
+    from genesis.engine.entities.rigid_entity import RigidEntity
+    from genesis.engine.solvers.rigid.rigid_solver_decomp import RigidSolver
 
 from gs_env.common.bases.base_robot import BaseGymRobot
 from gs_env.common.utils.math_utils import quat_from_euler
@@ -19,7 +21,6 @@ from gs_env.sim.robots.config.schema import (
     DRJointPosVelAction,
     HumanoidRobotArgs,
     LeggedRobotArgs,
-    ManipulatorRobotArgs,
     QuadrupedRobotArgs,
 )
 
@@ -49,7 +50,7 @@ class LeggedRobotBase(BaseGymRobot):
         self._robot: RigidEntity = scene.add_entity(  # type: ignore
             material=material,
             morph=morph,
-            visualize_contact=args.visualize_contact,
+            visualize_contact=True,
             vis_mode=args.vis_mode,
         )
 
@@ -588,7 +589,7 @@ class HumanoidRobotBase(LeggedRobotBase):
         self,
         num_envs: int,
         scene: gs.Scene,
-        args: ManipulatorRobotArgs | QuadrupedRobotArgs | HumanoidRobotArgs,
+        args: QuadrupedRobotArgs | HumanoidRobotArgs,
         device: torch.device,
     ) -> None:
         super().__init__(num_envs, scene, args, device)  # type: ignore
@@ -599,7 +600,7 @@ class G1Robot(HumanoidRobotBase):
         self,
         num_envs: int,
         scene: gs.Scene,
-        args: ManipulatorRobotArgs | QuadrupedRobotArgs | HumanoidRobotArgs,
+        args: QuadrupedRobotArgs | HumanoidRobotArgs,
         device: torch.device,
     ) -> None:
         super().__init__(num_envs, scene=scene, args=args, device=device)  # type: ignore
