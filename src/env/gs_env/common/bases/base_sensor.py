@@ -14,7 +14,7 @@ class BaseSensor(abc.ABC):
         Get the observation from the sensor.
 
         Args:
-            envs_idx (torch.IntTensor): Indices of environments in the batch to get observation.
+            envs_idx (torch.Tensor): Indices of environments in the batch to get observation.
         """
 
     @abc.abstractmethod

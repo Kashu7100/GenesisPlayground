@@ -155,7 +155,7 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
         "BaseAngVelReward": 1.0,
         "TrackingLinkPosReward": 30.0,
         "TrackingLinkQuatReward": 1.0,
-        "TrackingLinkLinVelReward": 0.5,
+        # "TrackingLinkLinVelReward": 0.5,
         "TrackingLinkAngVelReward": 0.02,
         "FootContactReward": 30.0,
         ### Regularization ###
@@ -166,7 +166,7 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
         "AnkleTorquePenalty": 0.003,
         "BodyAngVelXYPenalty": 1.0,
         "WaistVelPenalty": 0.5,
-        "FeetSlidePenalty": 5.0,
+        # "FeetSlidePenalty": 5.0,
     },
     img_resolution=(480, 270),
     action_latency=1,
@@ -193,6 +193,7 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
         "base_euler",
         "base_ang_vel_local",
         "base_rotation_6D",
+        "diff_base_yaw",
         "projected_gravity",
         # Motion Difference
         "diff_dof_pos",
@@ -223,6 +224,7 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
         "base_euler",
         "base_ang_vel_local",
         "base_rotation_6D",
+        "diff_base_yaw",
         "projected_gravity",
         # Motion Difference
         "diff_dof_pos",
@@ -348,7 +350,7 @@ EnvArgsRegistry["g1_motion"] = MotionEnvArgs(
         "BaseAngVelReward": 1.0,
         "TrackingLinkPosReward": 30.0,
         "TrackingLinkQuatReward": 1.0,
-        "TrackingLinkLinVelReward": 0.5,
+        # "TrackingLinkLinVelReward": 0.5,
         "TrackingLinkAngVelReward": 0.02,
         "FootContactReward": 30.0,
         ### Regularization ###
@@ -359,7 +361,7 @@ EnvArgsRegistry["g1_motion"] = MotionEnvArgs(
         "AnkleTorquePenalty": 0.003,
         "BodyAngVelXYPenalty": 1.0,
         "WaistVelPenalty": 0.5,
-        "FeetSlidePenalty": 5.0,
+        # "FeetSlidePenalty": 5.0,
     },
     img_resolution=(480, 270),
     action_latency=1,
@@ -385,6 +387,7 @@ EnvArgsRegistry["g1_motion"] = MotionEnvArgs(
         "dof_vel",
         "base_ang_vel_local",
         "base_rotation_6D",
+        "diff_base_yaw",
         "projected_gravity",
         # Reference
         "motion_obs",
@@ -397,6 +400,7 @@ EnvArgsRegistry["g1_motion"] = MotionEnvArgs(
         "base_euler",
         "base_ang_vel_local",
         "base_rotation_6D",
+        "diff_base_yaw",
         "projected_gravity",
         # Motion Difference
         "diff_dof_pos",

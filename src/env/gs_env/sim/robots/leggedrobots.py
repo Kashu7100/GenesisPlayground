@@ -186,12 +186,12 @@ class LeggedRobotBase(BaseGymRobot):
             self._dof_vel_limit = torch.tensor(dof_vel_limit, device=self._device)
 
     def _init_domain_randomization(self) -> None:
-        envs_idx: torch.IntTensor = torch.arange(0, self._num_envs, device=self._device)  # type: ignore
+        envs_idx: torch.Tensor = torch.arange(0, self._num_envs, device=self._device)
         self._randomize_rigids(envs_idx)
         self._randomize_controls(envs_idx)
         self._steps_since_randomize_pds = 0
 
-    def _randomize_rigids(self, envs_idx: torch.IntTensor) -> None:
+    def _randomize_rigids(self, envs_idx: torch.Tensor) -> None:
         # friction
         min_friction, max_friction = self._args.dr_args.friction_range
         solver: RigidSolver = self._robot.solver
@@ -224,7 +224,7 @@ class LeggedRobotBase(BaseGymRobot):
         )
         self._com_displacement[envs_idx] = displacement[:, 0, :]
 
-    def _randomize_controls(self, envs_idx: torch.IntTensor) -> None:
+    def _randomize_controls(self, envs_idx: torch.Tensor) -> None:
         # kp
         min_kp, max_kp = self._args.dr_args.kp_range
         ratios = torch.rand(len(envs_idx), self._dof_dim) * (max_kp - min_kp) + min_kp

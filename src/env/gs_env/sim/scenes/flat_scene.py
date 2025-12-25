@@ -53,7 +53,7 @@ class FlatScene(BaseSimScene):
         self._center_envs_at_origin = args.center_envs_at_origin
         self._compile_kernels = args.compile_kernels
 
-    def reset(self, envs_idx: torch.IntTensor) -> None:
+    def reset(self, envs_idx: torch.Tensor) -> None:
         self._scene.reset(envs_idx=envs_idx)
 
     def __getattr__(self, item: str) -> Any:

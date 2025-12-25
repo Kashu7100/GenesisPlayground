@@ -225,13 +225,13 @@ class LeggedRobotEnv(BaseEnv):
             self._random_push_time,
         )
 
-    def _reset_buffers(self, envs_idx: torch.IntTensor) -> None:
+    def _reset_buffers(self, envs_idx: torch.Tensor) -> None:
         self.time_since_reset[envs_idx] = 0.0
         self.last_action[envs_idx] *= 0
         self.last_last_action[envs_idx] *= 0
         self._last_target_dof_pos[envs_idx] *= 0
 
-    def reset_idx(self, envs_idx: torch.IntTensor) -> None:
+    def reset_idx(self, envs_idx: torch.Tensor) -> None:
         default_pos = self._robot.default_pos[None, :].repeat(len(envs_idx), 1)
         default_quat = self._robot.default_quat[None, :].repeat(len(envs_idx), 1)
         default_dof_pos = self._robot.default_dof_pos[None, :].repeat(len(envs_idx), 1)
