@@ -96,6 +96,12 @@ class OculusPublisher:
         self.aug_arm_length = self.g1_arm_length * 1.0
         self.aug_shoulder_z = self.g1_shoulder_z * 1.0
 
+    def close(self) -> None:
+        try:
+            self.client.close()
+        except Exception:
+            pass
+
     def _convert_to_target(
         self, pos_o: torch.Tensor, quat_o_xyzw: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -262,7 +268,7 @@ class OculusPublisher:
         except KeyboardInterrupt:
             print("\n[oculus_publisher] Stopped by user.")
         finally:
-            self.client.close()
+            self.close()
 
 
 if __name__ == "__main__":
