@@ -50,7 +50,7 @@ class LeggedRobotBase(BaseGymRobot):
         self._robot: RigidEntity = scene.add_entity(  # type: ignore
             material=material,
             morph=morph,
-            visualize_contact=True,
+            visualize_contact=args.visualize_contact,
             vis_mode=args.vis_mode,
         )
 

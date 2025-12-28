@@ -106,7 +106,7 @@ def lafan_to_motion_data(
         return motion_data
 
     try:
-        run()
+        return run()
     except KeyboardInterrupt:
         return None
 
@@ -116,7 +116,7 @@ if __name__ == "__main__":
 
     # add files in directory assets/lafan
     csv_files = [f for f in Path("./assets/lafan").glob("*.csv")]
-    # csv_files = ["/Users/xiongziyan/Python/GenesisPlayground/assets/lafan/run2_subject4.csv"]
+    # csv_files = ["./assets/lafan/run2_subject4.csv"]
 
     log_dir = Path("./assets/motion/lafan")
     os.makedirs(log_dir, exist_ok=True)
@@ -148,6 +148,8 @@ if __name__ == "__main__":
             print(f"Saving motion data to {motion_path}")
             with open(motion_path, "wb") as f:
                 pickle.dump(motion_data, f)
+        else:
+            print(f"Skipping motion data for {csv_file}")
     #     dataset_yaml["motions"].append({
     #         "file": motion_name + ".pkl",
     #         "weight": 100.0,
