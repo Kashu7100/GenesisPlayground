@@ -106,15 +106,15 @@ class NatNetClient:
 
         # NatNet stream version server is capable of.
         # Updated during initialization only.
-        self.__nat_net_stream_version_server = [0, 0, 0, 0]
+        self.__nat_net_stream_version_server = [3, 0, 3, 0]
 
         # NatNet stream version.
         # Will be updated to the actual version the server is using at runtime.
-        self.__nat_net_requested_version = [0, 0, 0, 0]
+        self.__nat_net_requested_version = [3, 0, 3, 0]
 
         # server stream version.
         # Will be updated to the actual version the server is using at init..
-        self.__server_version = [0, 0, 0, 0]
+        self.__server_version = [3, 0, 3, 0]
 
         # Lock values once run is called
         self.__is_locked = False
