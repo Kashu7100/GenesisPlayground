@@ -58,6 +58,22 @@ class OptitrackPublisher:
             use_multicast=use_multicast,
         )
 
+        self.zero_link_pos_local = torch.tensor(
+            [
+                [0.0, 0.1, 0.04],
+                [0.0, -0.1, 0.04],
+                [0.2, 0.2, 0.87],
+                [0.2, -0.2, 0.87],
+                [0.0, 0.0, 0.83],
+                [0.0, 0.0, 0.79],
+            ],
+            dtype=torch.float32,
+        )
+        self.zero_link_quat_local = torch.zeros(6, 4)
+        self.zero_link_quat_local[:, 0] = 1.0
+        self.zero_link_lin_vel = torch.zeros(6, 3)
+        self.zero_link_ang_vel = torch.zeros(6, 3)
+
         self.name_to_idx: dict[str, int] = {n: i for i, n in enumerate(self.SKELETON_ORDER)}
         self.motion_indices = [self.name_to_idx[n] for n in self.MOTION_NAMES]
 
@@ -74,10 +90,11 @@ class OptitrackPublisher:
         quat = torch.zeros((51, 4), dtype=torch.float32)
         quat[:, 0] = 1.0
         for rb_id, (p, q) in frame.items():
-            if rb_id not in RIGID_BODY_ID_MAP or RIGID_BODY_ID_MAP[rb_id] not in self.name_to_idx:
+            if rb_id not in RIGID_BODY_ID_MAP:
+                raise ValueError(f"Unmapped RB ID {rb_id}!! Please check RIGID_BODY_ID_MAP.")
+            if RIGID_BODY_ID_MAP[rb_id] not in self.name_to_idx:
                 continue
-            name = RIGID_BODY_ID_MAP[rb_id]
-            idx = self.name_to_idx[name]
+            idx = self.name_to_idx[RIGID_BODY_ID_MAP[rb_id]]
             pos[idx] = torch.tensor(p, dtype=torch.float32)
             quat[idx] = torch.roll(torch.tensor(q, dtype=torch.float32), 1)
 
@@ -88,10 +105,18 @@ class OptitrackPublisher:
         self.r.set(f"{self.key}:global:quat", json.dumps(_to_list(quat)))
 
     def _publish_motion_refs(self, pos: torch.Tensor, quat: torch.Tensor, frame_id: int) -> None:
-        self.r.set(f"{self.key}:motion:link_pos_local", json.dumps(_to_list(pos)))
-        self.r.set(f"{self.key}:motion:link_quat_local", json.dumps(_to_list(quat)))
+        link_pos_local = pos.clone()
+        link_quat_local = quat.clone()
+        link_lin_vel = self.zero_link_lin_vel.clone()
+        link_ang_vel = self.zero_link_ang_vel.clone()
+        self.r.set(f"{self.key}:motion:link_pos_local", json.dumps(_to_list(link_pos_local)))
+        self.r.set(f"{self.key}:motion:link_quat_local", json.dumps(_to_list(link_quat_local)))
+        self.r.set(f"{self.key}:motion:link_lin_vel", json.dumps(_to_list(link_lin_vel)))
+        self.r.set(f"{self.key}:motion:link_ang_vel", json.dumps(_to_list(link_ang_vel)))
         self.r.set(f"{self.key}:timestamp:link_pos_local", frame_id)
         self.r.set(f"{self.key}:timestamp:link_quat_local", frame_id)
+        self.r.set(f"{self.key}:timestamp:link_lin_vel", frame_id)
+        self.r.set(f"{self.key}:timestamp:link_ang_vel", frame_id)
 
     def run(self) -> None:
         print("=" * 80)
@@ -102,6 +127,8 @@ class OptitrackPublisher:
         print("=" * 80)
 
         self.client.run()
+        self.client.get_frame()
+        print("[optitrack_publisher] Successfully received data from OptiTrack server.")
 
         try:
             while True:
