@@ -1,4 +1,3 @@
-import platform
 import sys
 import time
 from pathlib import Path
@@ -97,6 +96,16 @@ def main(
         # Load checkpoint and env_args
         policy, env_args = load_checkpoint_and_env_args(exp_name, num_ckpt, device)
 
+    tracking_link_names = getattr(env_args, "tracking_link_names", [])
+    num_tracking_links = len(tracking_link_names)
+
+    # Initialize Redis client with tracking links
+    redis_client = RedisClient(
+        url=redis_url, key=redis_key, device=device, num_tracking_links=num_tracking_links
+    )
+    motion_elements = list(getattr(env_args, "observed_steps", {}).keys())
+    redis_client.set_motion_obs_elements(motion_elements)
+
     if sim:
         print("Running in SIMULATION mode")
         import gs_env.sim.envs as envs
@@ -126,16 +135,6 @@ def main(
         while not env.robot.Start:
             time.sleep(0.1)
 
-    tracking_link_names = getattr(env_args, "tracking_link_names", [])
-    num_tracking_links = len(tracking_link_names)
-
-    # Initialize Redis client with tracking links
-    redis_client = RedisClient(
-        url=redis_url, key=redis_key, device=device, num_tracking_links=num_tracking_links
-    )
-    motion_elements = list(getattr(env_args, "observed_steps", {}).keys())
-    redis_client.set_motion_obs_elements(motion_elements)
-
     if view and sim:
         print("=" * 80)
         print("Starting motion visualization")
@@ -163,6 +162,8 @@ def main(
 
         last_update_time = time.time()
 
+        start_step_time = time.time()
+        step_id = 0
         while True:
             # Control loop timing (50 Hz)
             if time.time() - last_update_time < 0.02:
@@ -197,7 +198,13 @@ def main(
                         ref_link_quat = quat_mul(ref_quat_yaw, ref_link_quat)
                         env.scene.set_obj_pose(link_name, pos=ref_link_pos, quat=ref_link_quat)  # type: ignore
 
-            env.scene.scene.step(refresh_visualizer=False)  # type: ignore
+            env.scene.scene.step()  # type: ignore
+            step_id += 1
+            if step_id % 100 == 0 and step_id > 0:
+                print(
+                    f"Step {step_id}: Average step time: {(time.time() - start_step_time) / 100:.4f}s"
+                )
+                start_step_time = time.time()
 
     def deploy_loop() -> None:
         nonlocal env, redis_client, tracking_link_names
@@ -206,6 +213,7 @@ def main(
         commands_t = torch.zeros(1, 3, device=device)
         total_inference_time = 0
         step_id = 0
+        action_scale = 0
 
         # Build link_name_to_idx mapping: index in tracking_link_names list
         link_name_to_idx = {link_name: idx for idx, link_name in enumerate(tracking_link_names)}
@@ -221,6 +229,9 @@ def main(
             if not sim and hasattr(env, "is_emergency_stop") and env.is_emergency_stop:  # type: ignore
                 print("Emergency stop triggered!")
                 break
+            if step_id < 50:
+                action_scale += 0.02
+                action_scale = min(action_scale, 1.0)
 
             if not sim:
                 commands_t[0, 0] = env.robot.Ly  # forward velocity (m/s)
@@ -273,7 +284,7 @@ def main(
                 total_inference_time += end_time - start_time
 
             # print(action_t)
-            env.apply_action(action_t)
+            env.apply_action(action_t * action_scale)
 
             if sim:
                 env.time_since_reset[0] = -1.0  # type: ignore
@@ -300,12 +311,12 @@ def main(
 
             # Control loop timing (50 Hz)
             if time.time() < next_step_time:
-                next_step_time = next_step_time + 0.02
                 time.sleep(max(0, next_step_time - time.time()))
+                next_step_time = next_step_time + 0.02
             else:
                 next_step_time = time.time() + 0.02
 
-            if step_id % 100 == 0:
+            if step_id % 100 == 0 and step_id > 0:
                 print(f"Step {step_id}: Average inference time: {total_inference_time / 100:.4f}s")
                 print(f"Step {step_id}: FPS: {100 / (time.time() - start_step_time):.2f}")
                 total_inference_time = 0
@@ -313,23 +324,9 @@ def main(
 
     try:
         if view and sim:
-            # View mode - show motion from Redis
-            if platform.system() == "Darwin" and show_viewer:
-                import threading
-
-                threading.Thread(target=view_loop).start()
-                env.scene.scene.viewer.run()  # type: ignore
-            else:
-                view_loop()
+            view_loop()
         else:
-            # Deploy mode - run policy
-            if platform.system() == "Darwin" and sim and show_viewer:
-                import threading
-
-                threading.Thread(target=deploy_loop).start()
-                env.scene.scene.viewer.run()  # type: ignore
-            else:
-                deploy_loop()
+            deploy_loop()
     except KeyboardInterrupt:
         if not sim:
             env.emergency_stop()

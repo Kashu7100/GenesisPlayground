@@ -5,10 +5,8 @@ from gs_env.sim.envs.config.schema import (
     MotionEnvArgs,
     WalkingEnvArgs,
 )
-from gs_env.sim.objects.config.registry import ObjectArgsRegistry
 from gs_env.sim.robots.config.registry import RobotArgsRegistry
 from gs_env.sim.scenes.config.registry import SceneArgsRegistry
-from gs_env.sim.sensors.config.registry import SensorArgsRegistry
 
 # ------------------------------------------------------------
 # Genesis init
@@ -27,47 +25,15 @@ GenesisInitArgsRegistry["default"] = GenesisInitArgs(
 
 
 # ------------------------------------------------------------
-# Manipulation
+# Environment
 # ------------------------------------------------------------
 
 
 EnvArgsRegistry: dict[str, EnvArgs] = {}
 
-EnvArgsRegistry["goal_reach_default"] = EnvArgs(
-    env_name="GoalReachingEnv",
-    gs_init_args=GenesisInitArgsRegistry["default"],
-    scene_args=SceneArgsRegistry["flat_scene_default"],
-    robot_args=RobotArgsRegistry["franka_default"],
-    objects_args=[ObjectArgsRegistry["box_default"]],
-    sensors_args=[
-        SensorArgsRegistry["oak_camera_default"],
-        SensorArgsRegistry["ee_link_pos"],
-        SensorArgsRegistry["ee_link_quat"],
-        SensorArgsRegistry["joint_angles"],
-        SensorArgsRegistry["gripper_width"],
-    ],
-    reward_term="reward",
-    reward_args={
-        "ActionL2Penalty": 0.0,
-        "KeypointsAlign": 1.0,
-    },
-    img_resolution=(480, 270),
-)
-
-
-EnvArgsRegistry["pick_cube_default"] = EnvArgs(
-    env_name="GoalReachingEnv",
-    gs_init_args=GenesisInitArgsRegistry["default"],
-    scene_args=SceneArgsRegistry["flat_scene_default"],
-    robot_args=RobotArgsRegistry["franka_teleop"],
-    objects_args=[ObjectArgsRegistry["box_default"]],
-    sensors_args=[],
-    reward_args={},
-    img_resolution=(480, 270),
-)
 
 # ------------------------------------------------------------
-# G1 Configuration
+# G1 Walking
 # ------------------------------------------------------------
 
 EnvArgsRegistry["g1_walk"] = WalkingEnvArgs(
@@ -189,7 +155,7 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
         "BaseAngVelReward": 1.0,
         "TrackingLinkPosReward": 30.0,
         "TrackingLinkQuatReward": 1.0,
-        "TrackingLinkLinVelReward": 0.5,
+        # "TrackingLinkLinVelReward": 0.5,
         "TrackingLinkAngVelReward": 0.02,
         "FootContactReward": 30.0,
         ### Regularization ###
@@ -200,7 +166,7 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
         "AnkleTorquePenalty": 0.003,
         "BodyAngVelXYPenalty": 1.0,
         "WaistVelPenalty": 0.5,
-        "FeetSlidePenalty": 5.0,
+        # "FeetSlidePenalty": 5.0,
     },
     img_resolution=(480, 270),
     action_latency=1,
@@ -227,6 +193,7 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
         "base_euler",
         "base_ang_vel_local",
         "base_rotation_6D",
+        "diff_base_yaw",
         "projected_gravity",
         # Motion Difference
         "diff_dof_pos",
@@ -257,6 +224,7 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
         "base_euler",
         "base_ang_vel_local",
         "base_rotation_6D",
+        "diff_base_yaw",
         "projected_gravity",
         # Motion Difference
         "diff_dof_pos",
@@ -382,7 +350,7 @@ EnvArgsRegistry["g1_motion"] = MotionEnvArgs(
         "BaseAngVelReward": 1.0,
         "TrackingLinkPosReward": 30.0,
         "TrackingLinkQuatReward": 1.0,
-        "TrackingLinkLinVelReward": 0.5,
+        # "TrackingLinkLinVelReward": 0.5,
         "TrackingLinkAngVelReward": 0.02,
         "FootContactReward": 30.0,
         ### Regularization ###
@@ -393,7 +361,7 @@ EnvArgsRegistry["g1_motion"] = MotionEnvArgs(
         "AnkleTorquePenalty": 0.003,
         "BodyAngVelXYPenalty": 1.0,
         "WaistVelPenalty": 0.5,
-        "FeetSlidePenalty": 5.0,
+        # "FeetSlidePenalty": 5.0,
     },
     img_resolution=(480, 270),
     action_latency=1,
@@ -419,6 +387,7 @@ EnvArgsRegistry["g1_motion"] = MotionEnvArgs(
         "dof_vel",
         "base_ang_vel_local",
         "base_rotation_6D",
+        "diff_base_yaw",
         "projected_gravity",
         # Reference
         "motion_obs",
@@ -431,6 +400,7 @@ EnvArgsRegistry["g1_motion"] = MotionEnvArgs(
         "base_euler",
         "base_ang_vel_local",
         "base_rotation_6D",
+        "diff_base_yaw",
         "projected_gravity",
         # Motion Difference
         "diff_dof_pos",
@@ -502,7 +472,7 @@ EnvArgsRegistry["g1_motion"] = MotionEnvArgs(
     },
     adaptive_termination_ratio=None,
     deviation_thresholds={
-        "base_quat_error": 0.4,
+        "base_quat_error": 1.0,
         "base_lin_vel_error": 2.0,
     },
     observed_steps={
@@ -524,6 +494,12 @@ EnvArgsRegistry["g1_motion"] = MotionEnvArgs(
             1,
         ],
         "link_quat_local": [
+            1,
+        ],
+        "link_lin_vel": [
+            1,
+        ],
+        "link_ang_vel": [
             1,
         ],
         "foot_contact": [

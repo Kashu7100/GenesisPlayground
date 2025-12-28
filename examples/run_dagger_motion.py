@@ -3,7 +3,6 @@
 
 import glob
 import os
-import platform
 from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
@@ -229,13 +228,7 @@ def train_policy(
         print(f"Final reward: {train_summary_info['final_reward']:.2f}.")
 
     try:
-        if platform.system() == "Darwin" and show_viewer:
-            import threading
-
-            threading.Thread(target=train).start()
-            env.scene.scene.viewer.run()  # type: ignore
-        else:
-            train()
+        train()
     except KeyboardInterrupt:
         pass
 

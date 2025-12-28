@@ -3,7 +3,6 @@
 
 import glob
 import os
-import platform
 from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
@@ -290,9 +289,6 @@ def evaluate_policy(
                     return
 
             env.time_since_reset[0] = 0.0
-            if platform.system() == "Darwin":
-                motion_id = (motion_id + 1) % env.motion_lib.num_motions
-                continue
             while True:
                 action = input(
                     "Enter n to play next motion, q to quit, r to replay current motion, p to play previous motion, id to play specific motion\n"
@@ -315,13 +311,7 @@ def evaluate_policy(
                     return
 
     try:
-        if platform.system() == "Darwin" and show_viewer:
-            import threading
-
-            threading.Thread(target=evaluate).start()
-            env.scene.scene.viewer.run()  # type: ignore
-        else:
-            evaluate()
+        evaluate()
     except KeyboardInterrupt:
         pass
 
@@ -421,13 +411,7 @@ def train_policy(
         print(f"Final reward: {train_summary_info['final_reward']:.2f}.")
 
     try:
-        if platform.system() == "Darwin" and show_viewer:
-            import threading
-
-            threading.Thread(target=train).start()
-            env.scene.scene.viewer.run()  # type: ignore
-        else:
-            train()
+        train()
     except KeyboardInterrupt:
         pass
 

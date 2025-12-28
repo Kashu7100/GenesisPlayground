@@ -1,5 +1,4 @@
 import os
-import platform
 import sys
 import time
 from pathlib import Path
@@ -463,13 +462,7 @@ def main(
                         )
 
     try:
-        if platform.system() == "Darwin" and show_viewer:
-            import threading
-
-            threading.Thread(target=run_dof_diagnosis_fixed).start()
-            env.scene.scene.viewer.run()  # type: ignore
-        else:
-            run_dof_diagnosis_fixed()
+        run_dof_diagnosis_fixed()
     except KeyboardInterrupt:
         pass
 

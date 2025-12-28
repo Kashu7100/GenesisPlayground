@@ -1,9 +1,8 @@
-import os
+import argparse
 import pickle
 import time
 from pathlib import Path
 from typing import Any, cast
-import argparse
 
 import gs_env.sim.envs as gs_envs
 import torch
@@ -124,7 +123,7 @@ def twist_to_motion_data(
                     )
 
             if show_viewer:
-                env.scene.scene.step(refresh_visualizer=False)
+                env.scene.scene.step()
                 while time.time() - last_update_time < 1 / motion_data["fps"]:
                     time.sleep(0.01)
                 last_update_time = time.time()
@@ -138,13 +137,7 @@ def twist_to_motion_data(
         return motion_data
 
     try:
-        if show_viewer:
-            import threading
-
-            threading.Thread(target=run).start()
-            env.scene.scene.viewer.run()  # type: ignore
-        else:
-            return run()
+        run()
     except KeyboardInterrupt:
         return None
 
@@ -181,13 +174,12 @@ if __name__ == "__main__":
         motion_data = twist_to_motion_data(env, data, show_viewer=show_viewer)
         if motion_data:
             # path of this file relative to src root
-            rel_path = pkl_file.relative_to(src)      # e.g. Subject_1_F_MoSh/seq1.pkl
+            rel_path = pkl_file.relative_to(src)  # e.g. Subject_1_F_MoSh/seq1.pkl
 
             # same structure under target root
-            out_path = tgt / rel_path                 # BMLmovi_retarget/Subject_1_F_MoSh/seq1.pkl
+            out_path = tgt / rel_path  # BMLmovi_retarget/Subject_1_F_MoSh/seq1.pkl
             out_path.parent.mkdir(parents=True, exist_ok=True)
 
             with open(out_path, "wb") as f:
                 pickle.dump(motion_data, f)
             print(f"Saved -> {out_path}")
-

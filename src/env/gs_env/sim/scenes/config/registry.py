@@ -377,6 +377,7 @@ SceneArgsRegistry["custom_scene_g1_mocap"] = CustomSceneArgs(
         enable_collision=True,
         gravity=(0, 0, -9.8),
         box_box_detection=True,
+        # noslip_iterations=5,
     ),
     avatar_options=AvatarArgsRegistry["default"],
     mpm_options=MPMArgsRegistry["default"],

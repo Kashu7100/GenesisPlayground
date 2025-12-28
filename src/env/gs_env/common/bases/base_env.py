@@ -17,11 +17,11 @@ class BaseEnv(ABC):
         self._episode_length_limit: int | None = None
 
     def reset(self) -> None:
-        envs_idx = torch.IntTensor(range(self.num_envs))
+        envs_idx = torch.arange(self.num_envs, device=self._device)
         self.reset_idx(envs_idx=envs_idx)
 
     @abstractmethod
-    def reset_idx(self, envs_idx: torch.IntTensor) -> None: ...
+    def reset_idx(self, envs_idx: torch.Tensor) -> None: ...
 
     @abstractmethod
     def apply_action(self, action: torch.Tensor) -> None: ...

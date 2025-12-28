@@ -259,6 +259,7 @@ class MotionEnv(LeggedRobotEnv):
         self.diff_base_euler = torch.zeros(
             self.num_envs, 3, device=self._device, dtype=torch.float32
         )
+        self.diff_base_yaw = torch.zeros(self.num_envs, 1, device=self._device, dtype=torch.float32)
         self.diff_base_lin_vel_local = torch.zeros(self.num_envs, 3, device=self._device)
         self.diff_base_ang_vel_local = torch.zeros(self.num_envs, 3, device=self._device)
         self.diff_tracking_link_pos_local_yaw = torch.zeros(
@@ -327,11 +328,11 @@ class MotionEnv(LeggedRobotEnv):
         envs_idx = torch.arange(self.num_envs, device=self._device, dtype=torch.long)
         self.reset_idx(envs_idx)
 
-    def _reset_buffers(self, envs_idx: torch.IntTensor) -> None:
+    def _reset_buffers(self, envs_idx: torch.Tensor) -> None:
         super()._reset_buffers(envs_idx=envs_idx)
         self.feet_air_time[envs_idx] = 0.0
 
-    def reset_idx(self, envs_idx: torch.IntTensor) -> None:
+    def reset_idx(self, envs_idx: torch.Tensor) -> None:
         if self._eval_mode:
             self.reset_to_default_pos(envs_idx)
             return
@@ -718,6 +719,9 @@ class MotionEnv(LeggedRobotEnv):
         base_quat_diff = quat_diff(self.base_quat[envs_idx], self.ref_base_quat[envs_idx])
         self.diff_base_rotation_6D[envs_idx] = quat_to_rotation_6D(base_quat_diff)
         self.diff_base_euler[envs_idx] = self.ref_base_euler[envs_idx] - self.base_euler[envs_idx]
+        self.diff_base_yaw[envs_idx] = (
+            self.ref_base_euler[envs_idx, 2:3] - self.base_euler[envs_idx, 2:3]
+        )
         self.diff_dof_pos[envs_idx] = self.ref_dof_pos[envs_idx] - self.dof_pos[envs_idx]
         self.diff_dof_vel[envs_idx] = self.ref_dof_vel[envs_idx] - self.dof_vel[envs_idx]
         self.diff_base_lin_vel_local[envs_idx] = (

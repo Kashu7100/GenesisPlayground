@@ -92,7 +92,7 @@ class WalkingEnv(LeggedRobotEnv):
         self._command_resample_time = self._args.command_resample_time  # seconds
         self.time_since_resample = torch.zeros(self.num_envs, device=self._device)
 
-    def reset_idx(self, envs_idx: torch.IntTensor) -> None:
+    def reset_idx(self, envs_idx: torch.Tensor) -> None:
         super().reset_idx(envs_idx=envs_idx)
         self.feet_air_time[envs_idx] = 0.0
         self._resample_commands(envs_idx=envs_idx)

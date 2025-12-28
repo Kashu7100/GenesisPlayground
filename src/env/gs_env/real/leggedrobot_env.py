@@ -55,7 +55,7 @@ class UnitreeLeggedEnv(BaseGymRobot):
             self.target_vel_low_pass = np.zeros_like(self.robot.default_dof_pos, dtype=np.float32)
         self.low_pass_alpha = self._args.robot_args.low_pass_alpha
 
-    def reset(self, envs_idx: torch.IntTensor | None = None) -> None:
+    def reset(self, envs_idx: torch.Tensor | None = None) -> None:
         # TODO: implement reset to reset_pos
         pass
 

@@ -39,6 +39,8 @@ class RedisClient:
         self.ref_foot_contact = torch.ones(1, 2, device=device)
         self.link_pos_local_yaw = torch.zeros(1, self.num_tracking_links, 3, device=device)
         self.link_quat_local_yaw = torch.zeros(1, self.num_tracking_links, 4, device=device)
+        self.link_lin_vel = torch.zeros(1, self.num_tracking_links, 3, device=device)
+        self.link_ang_vel = torch.zeros(1, self.num_tracking_links, 3, device=device)
         self._zero_all()
 
         # Yaw difference quaternion (stored and applied to all subsequent updates)
@@ -100,6 +102,8 @@ class RedisClient:
         )[None, : self.num_tracking_links, :]
         self.link_quat_local_yaw.zero_()
         self.link_quat_local_yaw[:, :, 0] = 1.0
+        self.link_lin_vel.zero_()
+        self.link_ang_vel.zero_()
 
     def _fit_dim(self, data: list[float], dim: int) -> torch.Tensor:
         out = torch.zeros(1, dim, device=self._device)
@@ -359,6 +363,8 @@ class RedisClient:
             "dof_vel",
             "link_pos_local",
             "link_quat_local",
+            "link_lin_vel",
+            "link_ang_vel",
             "foot_contact",
         }
         if elements is None or len(elements) == 0:
@@ -401,6 +407,10 @@ class RedisClient:
                 future_dict[key] = self.link_pos_local_yaw.unsqueeze(1)
             elif key == "link_quat_local":
                 future_dict[key] = self.link_quat_local_yaw.unsqueeze(1)
+            elif key == "link_lin_vel":
+                future_dict[key] = self.link_lin_vel.unsqueeze(1)
+            elif key == "link_ang_vel":
+                future_dict[key] = self.link_ang_vel.unsqueeze(1)
             elif key == "foot_contact":
                 future_dict[key] = self.ref_foot_contact.unsqueeze(1)
 

@@ -123,7 +123,7 @@ def twist_to_motion_data(
                     )
 
             if show_viewer:
-                env.scene.scene.step(refresh_visualizer=False)
+                env.scene.scene.step()
                 while time.time() - last_update_time < 1 / motion_data["fps"]:
                     time.sleep(0.01)
                 last_update_time = time.time()
@@ -137,13 +137,7 @@ def twist_to_motion_data(
         return motion_data
 
     try:
-        if show_viewer:
-            import threading
-
-            threading.Thread(target=run).start()
-            env.scene.scene.viewer.run()  # type: ignore
-        else:
-            return run()
+        run()
     except KeyboardInterrupt:
         return None
 

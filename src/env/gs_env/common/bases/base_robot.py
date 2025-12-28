@@ -16,7 +16,7 @@ class BaseGymRobot(abc.ABC):
         super().__init__(*args, **kwargs)  # calls AgentHostMixin.__init__
 
     @abc.abstractmethod
-    def reset(self, envs_idx: torch.IntTensor | None = None) -> None:
+    def reset(self, envs_idx: torch.Tensor | None = None) -> None:
         """
         Reset the robot.
 
