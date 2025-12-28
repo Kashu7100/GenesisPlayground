@@ -44,7 +44,7 @@ class FramePrefixData:
 
     def get_as_string(self, tab_str: str = "  ", level: int = 0) -> str:
         out_tab_str = get_tab_str(tab_str, level)
-        out_str = f"{out_tab_str}Frame #: {self.frame_number:3.1d}\n"
+        out_str = f"{out_tab_str}Frame #: {self.frame_number:3d}\n"
         return out_str
 
 
@@ -71,10 +71,10 @@ class MarkerData:
         if self.model_name != "":
             out_str += f"{out_tab_str}Model Name : {get_as_string(self.model_name)}\n"
         marker_count = len(self.marker_pos_list)
-        out_str += f"{out_tab_str}Marker Count :{marker_count:3.1d}\n"
+        out_str += f"{out_tab_str}Marker Count :{marker_count:3d}\n"
         for i in range(marker_count):
             pos = self.marker_pos_list[i]
-            out_str += f"{out_tab_str2}Marker {i:3.1d} pos : [x={pos[0]:3.2f},y={pos[1]:3.2f},z={pos[2]:3.2f}]\n"
+            out_str += f"{out_tab_str2}Marker {i:3d} pos : [x={pos[0]:3.2f},y={pos[1]:3.2f},z={pos[2]:3.2f}]\n"
         return out_str
 
 
@@ -104,13 +104,13 @@ class MarkerSetData:
 
         # Labeled markers count
         marker_data_count = len(self.marker_data_list)
-        out_str += f"{out_tab_str}Markerset Count:{marker_data_count:3.1d}\n"
+        out_str += f"{out_tab_str}Markerset Count:{marker_data_count:3d}\n"
         for marker_data in self.marker_data_list:
             out_str += marker_data.get_as_string(tab_str, level + 1)
 
         # Unlabeled markers count (4 bytes)
         unlabeled_markers_count = self.unlabeled_markers.get_num_points()
-        out_str += f"{out_tab_str}Unlabeled Marker Count:{unlabeled_markers_count:3.1d}\n"
+        out_str += f"{out_tab_str}Unlabeled Marker Count:{unlabeled_markers_count:3d}\n"
         out_str += self.unlabeled_markers.get_as_string(tab_str, level + 1)
         return out_str
 
@@ -131,10 +131,10 @@ class LegacyMarkerData:
         out_tab_str2 = get_tab_str(tab_str, level + 1)
         out_str = ""
         marker_count = len(self.marker_pos_list)
-        out_str += f"{out_tab_str}Legacy Marker Count :{marker_count:3.1d}\n"
+        out_str += f"{out_tab_str}Legacy Marker Count :{marker_count:3d}\n"
         for i in range(marker_count):
             pos = self.marker_pos_list[i]
-            out_str += f"{out_tab_str2}Marker {i:3.1d} pos : [x={pos[0]:3.2f},y={pos[1]:3.2f},z={pos[2]:3.2f}]\n"
+            out_str += f"{out_tab_str2}Marker {i:3d} pos : [x={pos[0]:3.2f},y={pos[1]:3.2f},z={pos[2]:3.2f}]\n"
         return out_str
 
 
@@ -151,14 +151,14 @@ class RigidBodyMarker:
         out_str = ""
         out_str += f"{out_tab_str}RBMarker:"
         if self.marker_num > -1:
-            out_str += f" {self.marker_num:3.1d}"
+            out_str += f" {self.marker_num:3d}"
         out_str += "\n"
 
         out_str += (
             f"{out_tab_str}Position: [{self.pos[0]:3.2f} {self.pos[1]:3.2f} {self.pos[2]:3.2f}]\n"
         )
-        out_str += f"{out_tab_str}ID      : {self.id_num:3.1d}\n"
-        out_str += f"{out_tab_str}Size    : {self.size:3.1d}\n"
+        out_str += f"{out_tab_str}ID      : {self.id_num:3d}\n"
+        out_str += f"{out_tab_str}Size    : {self.size:3d}\n"
         return out_str
 
 
@@ -189,10 +189,10 @@ class RigidBody:
         # header
         out_str += f"{out_tab_str}Rigid Body    :"
         if self.marker_num > -1:
-            out_str += f" {self.marker_num:3.1d}"
+            out_str += f" {self.marker_num:3d}"
         out_str += "\n"
         print(self.id_num)
-        out_str += f"{out_tab_str}  ID            : {self.id_num:3.1d}\n"
+        out_str += f"{out_tab_str}  ID            : {self.id_num:3d}\n"
         # Position and orientation
         out_str += f"{out_tab_str}  Position      : [{self.pos[0]:3.2f}, {self.pos[1]:3.2f}, {self.pos[2]:3.2f}]\n"
         out_str += f"{out_tab_str}  Orientation   : [{self.rot[0]:3.2f}, {self.rot[1]:3.2f}, {self.rot[2]:3.2f}, {self.rot[3]:3.2f}]\n"
@@ -202,7 +202,7 @@ class RigidBody:
 
         # Marker Data
         if marker_count > 0:
-            out_str += f"{out_tab_str}  Marker Count  : {marker_count:3.1d}\n"
+            out_str += f"{out_tab_str}  Marker Count  : {marker_count:3d}\n"
             for i in marker_count_range:
                 rbmarker = self.rb_marker_list[i]
                 rbmarker.marker_num = i
@@ -234,7 +234,7 @@ class RigidBodyData:
         out_tab_str = get_tab_str(tab_str, level)
         out_str = ""
         rigid_body_count = len(self.rigid_body_list)
-        out_str += f"{out_tab_str}Rigid Body Count: {rigid_body_count:3.1d}\n"
+        out_str += f"{out_tab_str}Rigid Body Count: {rigid_body_count:3d}\n"
         rb_num = 0
         for rigid_body in self.rigid_body_list:
             rigid_body.marker_num = rb_num
@@ -255,9 +255,9 @@ class Skeleton:
     def get_as_string(self, tab_str: str = "  ", level: int = 0) -> str:
         out_tab_str = get_tab_str(tab_str, level)
         out_str = " "
-        out_str += f"{out_tab_str}ID: {self.id_num:3.1d}\n"
+        out_str += f"{out_tab_str}ID: {self.id_num:3d}\n"
         rigid_body_count = len(self.rigid_body_list)
-        out_str += f"{out_tab_str}Rigid Body Count: {rigid_body_count:3.1d}\n"
+        out_str += f"{out_tab_str}Rigid Body Count: {rigid_body_count:3d}\n"
         for rb_num in range(rigid_body_count):
             self.rigid_body_list[rb_num].marker_num = rb_num
             out_str += self.rigid_body_list[rb_num].get_as_string(tab_str, level + 2)
@@ -280,9 +280,9 @@ class SkeletonData:
 
         out_str = ""
         skeleton_count = len(self.skeleton_list)
-        out_str += f"{out_tab_str}Skeleton Count: {skeleton_count:3.1d}\n"
+        out_str += f"{out_tab_str}Skeleton Count: {skeleton_count:3d}\n"
         for skeleton_num in range(skeleton_count):
-            out_str += f"{out_tab_str2}Skeleton {skeleton_num:3.1d}\n"
+            out_str += f"{out_tab_str2}Skeleton {skeleton_num:3d}\n"
             out_str += self.skeleton_list[skeleton_num].get_as_string(tab_str, level + 2)
         return out_str
 
@@ -309,10 +309,10 @@ class AssetMarkerData:
         out_str = ""
         out_str += f"{out_tab_str}"
         if self.marker_num > -1:
-            out_str += f"{self.marker_num:3.1d} "
+            out_str += f"{self.marker_num:3d} "
         else:
             out_str += "    "
-        out_str += f"Marker {self.marker_id:7.1d}"
+        out_str += f"Marker {self.marker_id:7d}"
         out_str += f" pos : [{self.pos[0]:3.2f}, {self.pos[1]:3.2f}, {self.pos[2]:3.2f}] "
         out_str += f"       size={self.marker_size:3.2f}"
         out_str += f"       err={self.residual:3.2f}"
@@ -343,13 +343,13 @@ class AssetRigidBodyData:
         out_str = ""
         out_str += f"{out_tab_str}Rigid Body :"
         if self.rb_num > -1:
-            out_str += f"{self.rb_num:3.1d}"
+            out_str += f"{self.rb_num:3d}"
         out_str += "\n"
         out_str += f"{out_tab_str}ID          : {get_as_string(self.id_num)}\n"
         out_str += f"{out_tab_str}Position    : [{self.pos[0]:3.2f}, {self.pos[1]:3.2f}, {self.pos[2]:3.2f}]\n"
         out_str += f"{out_tab_str}Orientation : [{self.rot[0]:3.2f}, {self.rot[1]:3.2f}, {self.rot[2]:3.2f}, {self.rot[3]:3.2f}]\n"
         out_str += f"{out_tab_str}Mean Error  : {self.mean_error:3.2f}\n"
-        out_str += f"{out_tab_str}Params      : {self.param:3.1d}\n"
+        out_str += f"{out_tab_str}Params      : {self.param:3d}\n"
 
         return out_str
 
@@ -418,7 +418,7 @@ class AssetData:
         asset_count = self.get_asset_count()
         out_str += f"{out_tab_str}Asset Count: {asset_count}\n"
         for asset_num in range(asset_count):
-            out_str += f"{out_tab_str2}Asset {asset_num:3.1d}\n"
+            out_str += f"{out_tab_str2}Asset {asset_num:3d}\n"
             out_str += self.asset_list[asset_num].get_as_string(tab_str, level + 2)
         return out_str
 
@@ -460,15 +460,15 @@ class LabeledMarker:
         if self.marker_num > -1:
             out_str += f" {self.marker_num}"
         out_str += ":\n"
-        out_str += f"{out_tab_str}ID                 : [MarkerID: {marker_id:3.1d}] [ModelID: {model_id:3.1d}]\n"
+        out_str += f"{out_tab_str}ID                 : [MarkerID: {marker_id:3d}] [ModelID: {model_id:3d}]\n"
         out_str += f"{out_tab_str}pos                : [{self.pos[0]:3.2f}, {self.pos[1]:3.2f}, {self.pos[2]:3.2f}]\n"
         out_str += f"{out_tab_str}size               : [{self.size:3.2f}]\n"
         out_str += f"{out_tab_str}err                : [{self.residual:3.2f}]\n"
 
         occluded, point_cloud_solved, model_solved = self.__decode_param()
-        out_str += f"{out_tab_str}occluded           : [{occluded:3.1d}]\n"
-        out_str += f"{out_tab_str}point_cloud_solved : [{point_cloud_solved:3.1d}]\n"
-        out_str += f"{out_tab_str}model_solved       : [{model_solved:3.1d}]\n"
+        out_str += f"{out_tab_str}occluded           : [{occluded:3d}]\n"
+        out_str += f"{out_tab_str}point_cloud_solved : [{point_cloud_solved:3d}]\n"
+        out_str += f"{out_tab_str}model_solved       : [{model_solved:3d}]\n"
 
         return out_str
 
@@ -489,7 +489,7 @@ class LabeledMarkerData:
         out_str = ""
 
         labeled_marker_count = len(self.labeled_marker_list)
-        out_str += f"{out_tab_str}Labeled Marker Count: {labeled_marker_count:3.1d}\n"
+        out_str += f"{out_tab_str}Labeled Marker Count: {labeled_marker_count:3d}\n"
         for i in range(0, labeled_marker_count):
             labeled_marker = self.labeled_marker_list[i]
             labeled_marker.marker_num = i
@@ -515,12 +515,12 @@ class ForcePlateChannelData:
         fc_show = min(frame_count, fc_max)
         out_str += f"{out_tab_str}"
         if channel_num >= 0:
-            out_str += f"Channel {channel_num:3.1d}: "
-        out_str += f"{frame_count:3.1d} Frames - Frame Data: "
+            out_str += f"Channel {channel_num:3d}: "
+        out_str += f"{frame_count:3d} Frames - Frame Data: "
         for i in range(fc_show):
             out_str += f"{self.frame_list[i]:3.2f} "
         if fc_show < frame_count:
-            out_str += f" - Showing {fc_show:3.1d} of {frame_count:3.1d} frames"
+            out_str += f" - Showing {fc_show:3d} of {frame_count:3d} frames"
         out_str += "\n"
         return out_str
 
@@ -538,9 +538,9 @@ class ForcePlate:
         out_tab_str = get_tab_str(tab_str, level)
         out_str = ""
 
-        out_str += f"{out_tab_str}ID           : {self.id_num:3.1d}\n"
+        out_str += f"{out_tab_str}ID           : {self.id_num:3d}\n"
         num_channels = len(self.channel_data_list)
-        out_str += f"{out_tab_str}  Channel Count: {num_channels:3.1d}\n"
+        out_str += f"{out_tab_str}  Channel Count: {num_channels:3d}\n"
         for i in range(num_channels):
             out_str += self.channel_data_list[i].get_as_string(tab_str, level + 1, i)
         return out_str
@@ -563,9 +563,9 @@ class ForcePlateData:
         out_str = ""
 
         force_plate_count = len(self.force_plate_list)
-        out_str += f"{out_tab_str}Force Plate Count: {force_plate_count:3.1d}\n"
+        out_str += f"{out_tab_str}Force Plate Count: {force_plate_count:3d}\n"
         for i in range(force_plate_count):
-            out_str += f"{out_tab_str2}Force Plate {i:3.1d}\n"
+            out_str += f"{out_tab_str2}Force Plate {i:3d}\n"
             out_str += self.force_plate_list[i].get_as_string(tab_str, level + 2)
 
         return out_str
@@ -589,12 +589,12 @@ class DeviceChannelData:
         fc_show = min(frame_count, fc_max)
         out_str += f"{out_tab_str}"
         if channel_num >= 0:
-            out_str += f"Channel {channel_num:3.1d}: "
-        out_str += f"{frame_count:3.1d} Frames - Frame Data: "
+            out_str += f"Channel {channel_num:3d}: "
+        out_str += f"{frame_count:3d} Frames - Frame Data: "
         for i in range(fc_show):
             out_str += f"{self.frame_list[i]:3.2f} "
         if fc_show < frame_count:
-            out_str += f" - Showing {fc_show:3.1d} of {frame_count:3.1d} frames"
+            out_str += f" - Showing {fc_show:3d} of {frame_count:3d} frames"
         out_str += "\n"
         return out_str
 
@@ -614,7 +614,7 @@ class Device:
         out_str = ""
 
         num_channels = len(self.channel_data_list)
-        out_str += f"{out_tab_str}Device {device_num:3.1d}      ID: {self.id_num:3.1d} Num Channels: {num_channels:3.1d}\n"
+        out_str += f"{out_tab_str}Device {device_num:3d}      ID: {self.id_num:3d} Num Channels: {num_channels:3d}\n"
         for i in range(num_channels):
             out_str += self.channel_data_list[i].get_as_string(tab_str, level + 1, i)
 
@@ -638,7 +638,7 @@ class DeviceData:
         out_str = ""
 
         device_count = len(self.device_list)
-        out_str += f"{out_tab_str}Device Count: {device_count:3.1d}\n"
+        out_str += f"{out_tab_str}Device Count: {device_count:3d}\n"
         for i in range(device_count):
             out_str += self.device_list[i].get_as_string(tab_str, level + 1, i)
         return out_str
@@ -670,25 +670,25 @@ class FrameSuffixData:
         if not self.timestamp == -1:
             out_str += f"{out_tab_str}Timestamp                      : {self.timestamp:3.3f}\n"
         if not self.stamp_camera_mid_exposure == -1:
-            out_str += f"{out_tab_str}Mid-exposure timestamp         : {self.stamp_camera_mid_exposure:3.1d}\n"
+            out_str += f"{out_tab_str}Mid-exposure timestamp         : {self.stamp_camera_mid_exposure:3d}\n"
         if not self.stamp_data_received == -1:
             out_str += (
-                f"{out_tab_str}Camera data received timestamp : {self.stamp_data_received:3.1d}\n"
+                f"{out_tab_str}Camera data received timestamp : {self.stamp_data_received:3d}\n"
             )
         if not self.stamp_transmit == -1:
-            out_str += f"{out_tab_str}Transmit timestamp             : {self.stamp_transmit:3.1d}\n"
+            out_str += f"{out_tab_str}Transmit timestamp             : {self.stamp_transmit:3d}\n"
         if not self.prec_timestamp_secs == -1:
             # hours = int(self.prec_timestamp_secs/3600)
             # minutes=int(self.prec_timestamp_secs/60)%60
             # seconds=self.prec_timestamp_secs%60
-            # hms_string = """%sPrecision timestamp (hh:mm:ss) : %2.1d:%2.2d:
-            # %2.2d\n""" % (out_tab_str, hours, minutes, seconds)
+            # hms_string = """%sPrecision timestamp (hh:mm:ss) : %2d:%2d:
+            # %2d\n""" % (out_tab_str, hours, minutes, seconds)
             # out_str += hms_string
             out_str += (
-                f"{out_tab_str}Precision timestamp (seconds)  : {self.prec_timestamp_secs:3.1d}\n"
+                f"{out_tab_str}Precision timestamp (seconds)  : {self.prec_timestamp_secs:3d}\n"
             )
             if not self.prec_timestamp_frac_secs == -1:
-                out_str += f"{out_tab_str}Precision timestamp (fractional seconds) : {self.prec_timestamp_frac_secs:3.1d}\n"
+                out_str += f"{out_tab_str}Precision timestamp (fractional seconds) : {self.prec_timestamp_frac_secs:3d}\n"
 
         return out_str
 
@@ -937,7 +937,7 @@ def generate_prefix_data(frame_num: int = 0) -> FramePrefixData:
 
 
 def generate_label(label_base: str = "label", label_num: int = 0) -> str:
-    out_label = f"{label_base}_{label_num:3.3d}"
+    out_label = f"{label_base}_{label_num:3d}"
     return out_label
 
 
@@ -1203,9 +1203,9 @@ def test_all(run_test: bool = True) -> list[int]:
             totals = add_lists(totals, totals_tmp)
 
     print("--------------------")
-    print(f"[PASS] Count = {totals[0]:3.1d}")
-    print(f"[FAIL] Count = {totals[1]:3.1d}")
-    print(f"[SKIP] Count = {totals[2]:3.1d}")
+    print(f"[PASS] Count = {totals[0]:3d}")
+    print(f"[FAIL] Count = {totals[1]:3d}")
+    print(f"[SKIP] Count = {totals[2]:3d}")
 
     return totals
 

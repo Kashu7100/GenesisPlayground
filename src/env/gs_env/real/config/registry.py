@@ -9,7 +9,7 @@ EnvArgsRegistry: dict[str, EnvArgs] = {}
 
 EnvArgsRegistry["g1_links_tracking"] = OptitrackEnvArgs(
     server_ip="192.168.0.232",
-    client_ip="192.168.0.128",
+    client_ip="192.168.0.129",
     use_multicast=False,
     offset_config="./config/optitrack_offset/calibrated.yaml",
     tracked_link_names=[
