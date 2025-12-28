@@ -266,8 +266,7 @@ class NatNetClient:
         else:
             result = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
             try:
-                # result.bind((self.local_ip_address, 0))
-                result.bind(("0.0.0.0", 1511))  # Broadcast port 1511
+                result.bind((self.local_ip_address, 0))
             except OSError as e:
                 print(f"Socket error: {e}")
         return result
@@ -304,7 +303,8 @@ class NatNetClient:
             )
             result.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
-                result.bind((self.local_ip_address, 0))
+                # result.bind((self.local_ip_address, 0))
+                result.bind(("0.0.0.0", 1511))  # Broadcast port 1511
             except OSError as e:
                 print(f"Unicast Socket Error: {e}")
                 sys.exit(1)
