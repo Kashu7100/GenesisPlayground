@@ -83,6 +83,14 @@ class OptitrackPublisher:
         self.name_to_idx: dict[str, int] = {n: i for i, n in enumerate(self.SKELETON_ORDER)}
         self.motion_indices = [self.name_to_idx[n] for n in self.MOTION_NAMES]
 
+        self.motion_quat_inv = torch.tensor([1.0, 0.0, 0.0, 0.0])
+        self.g1_shoulder_y = 0.100
+        self.g1_arm_length = 0.378
+        self.g1_shoulder_z = 1.082
+        self.aug_shoulder_y = self.g1_shoulder_y * 1.0
+        self.aug_arm_length = self.g1_arm_length * 1.0
+        self.aug_shoulder_z = self.g1_shoulder_z * 1.0
+
     def close(self) -> None:
         try:
             self.client.shutdown()
@@ -110,7 +118,7 @@ class OptitrackPublisher:
         self.r.set(f"{self.key}:global:pos", json.dumps(_to_list(pos)))
         self.r.set(f"{self.key}:global:quat", json.dumps(_to_list(quat)))
 
-    def _publish_motion_refs(self, pos: torch.Tensor, quat: torch.Tensor, frame_id: int) -> None:
+    def _localize(self, pos: torch.Tensor, quat: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         link_pos_global = pos
         link_quat_global = quat
 
@@ -129,6 +137,26 @@ class OptitrackPublisher:
         link_pos_local = quat_apply(inv_yaw_b, relative_link_pos_global)
         link_quat_local = quat_mul(inv_yaw_b, link_quat_global)
 
+        return link_pos_local, link_quat_local
+
+    def _reorient_quat(self, quat_local: torch.Tensor) -> torch.Tensor:
+        return quat_mul(quat_local, self.motion_quat_inv)
+
+    def _rescale_all_heights(self, pos_local: torch.Tensor) -> torch.Tensor:
+        pos_local[:, 2] = pos_local[:, 2] * (self.g1_shoulder_z / self.aug_shoulder_z)
+        return pos_local
+
+    def _rescale_hand_pos(self, hand_pos_local: torch.Tensor, ys: float) -> torch.Tensor:
+        p = hand_pos_local.clone()
+        p[0] = p[0] * (self.g1_arm_length / self.aug_arm_length)
+        p[1] = (p[1] - ys * self.aug_shoulder_y) * (
+            self.g1_arm_length / self.aug_arm_length
+        ) + ys * self.g1_shoulder_y
+        return p
+
+    def _publish_motion_refs(self, pos: torch.Tensor, quat: torch.Tensor, frame_id: int) -> None:
+        link_pos_local = pos
+        link_quat_local = quat
         link_lin_vel = self.zero_link_lin_vel.clone()
         link_ang_vel = self.zero_link_ang_vel.clone()
 
@@ -162,6 +190,14 @@ class OptitrackPublisher:
                 pos51, quat51 = self._parse_frame(frame)
                 pos6 = pos51[self.motion_indices, :]
                 quat6 = quat51[self.motion_indices, :]
+
+                pos6, quat6 = self._localize(pos6, quat6)
+
+                quat6 = self._reorient_quat(quat6)
+                pos6 = self._rescale_all_heights(pos6)
+                # TODO: hand pose is relative to torso, not pelvis
+                pos6[2, :] = self._rescale_hand_pos(pos6[2, :], ys=1.0)
+                pos6[3, :] = self._rescale_hand_pos(pos6[3, :], ys=-1.0)
 
                 self._publish_global(pos51, quat51)
                 self._publish_motion_refs(pos6, quat6, frame_id)
