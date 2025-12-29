@@ -4,6 +4,12 @@ import time
 
 import redis
 import torch
+from gs_env.common.utils.math_utils import (
+    quat_apply,
+    quat_from_euler,
+    quat_mul,
+    quat_to_euler,
+)
 from gs_env.real.config.registry import EnvArgsRegistry
 from gs_env.real.config.schema import OptitrackEnvArgs
 from gs_env.real.optitrack.NatNetClient import setup_optitrack
@@ -105,10 +111,27 @@ class OptitrackPublisher:
         self.r.set(f"{self.key}:global:quat", json.dumps(_to_list(quat)))
 
     def _publish_motion_refs(self, pos: torch.Tensor, quat: torch.Tensor, frame_id: int) -> None:
-        link_pos_local = pos.clone()
-        link_quat_local = quat.clone()
+        link_pos_global = pos
+        link_quat_global = quat
+
+        # Hips idx 4
+        base_pos = link_pos_global[4:5, :]
+        base_quat = link_quat_global[4:5, :]
+
+        relative_link_pos_global = link_pos_global.clone()
+        relative_link_pos_global[:, :2] -= base_pos[0, :2]
+        base_euler = quat_to_euler(base_quat)
+        base_euler[:, 0] = 0.0
+        base_euler[:, 1] = 0.0
+        inv_yaw = quat_from_euler(-base_euler)
+
+        inv_yaw_b = inv_yaw.repeat(link_pos_global.shape[0], 1)
+        link_pos_local = quat_apply(inv_yaw_b, relative_link_pos_global)
+        link_quat_local = quat_mul(inv_yaw_b, link_quat_global)
+
         link_lin_vel = self.zero_link_lin_vel.clone()
         link_ang_vel = self.zero_link_ang_vel.clone()
+
         self.r.set(f"{self.key}:motion:link_pos_local", json.dumps(_to_list(link_pos_local)))
         self.r.set(f"{self.key}:motion:link_quat_local", json.dumps(_to_list(link_quat_local)))
         self.r.set(f"{self.key}:motion:link_lin_vel", json.dumps(_to_list(link_lin_vel)))
