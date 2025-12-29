@@ -83,6 +83,9 @@ class OnPolicyRunner(BaseRunner):
             total_steps += train_one_iteration_metrics["speed"]["rollout_step"]
             reward_list.append(train_one_iteration_metrics["rollout"]["mean_reward"])
 
+            # Update curriculum
+            self.algorithm.update_curriculum(iteration, self.args.total_iterations)
+
             # Logging
             if iteration % self.args.log_interval == 0:
                 # also log current iteration

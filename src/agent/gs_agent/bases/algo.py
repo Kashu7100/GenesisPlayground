@@ -74,6 +74,15 @@ class BaseAlgo(ABC):
         """
         ...
 
+    @abstractmethod
+    def update_curriculum(
+        self, current_iteration: int, total_iterations: int, **kwargs: Any
+    ) -> None:
+        """
+        Update the curriculum.
+        """
+        ...
+
     def freeze_actor(self) -> None:  # noqa: B027
         """
         Freeze the actor.
