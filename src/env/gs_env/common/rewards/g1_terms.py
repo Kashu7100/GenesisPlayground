@@ -449,25 +449,43 @@ class TrackingLinkAngVelReward(RewardTerm):
         return -tracking_link_ang_vel_error * deviation_buf
 
 
+# class FootContactReward(RewardTerm):
+#     """
+#     Reward the foot contact.
+
+#     Args:
+#         foot_contact_weighted: Foot contact weighted tensor of shape (B, N) where B is the batch size and N is the number of feet.
+#         ref_foot_contact_weighted: Reference foot contact weighted tensor of shape (B, N) where B is the batch size and N is the number of feet.
+#     """
+
+#     required_keys = ("foot_contact_weighted", "ref_foot_contact_weighted", "ref_foot_contact")
+
+#     def _compute(
+#         self,
+#         foot_contact_weighted: torch.Tensor,
+#         ref_foot_contact_weighted: torch.Tensor,
+#         ref_foot_contact: torch.Tensor,
+#     ) -> torch.Tensor:  # type: ignore
+#         # reward
+#         foot_contact_weighted_error = (
+#             (0.8 * ref_foot_contact_weighted - foot_contact_weighted).clamp(min=0.0)
+#         ) + foot_contact_weighted * (1 - ref_foot_contact) ** 2
+#         return -foot_contact_weighted_error.sum(dim=-1)
+
+
 class FootContactReward(RewardTerm):
     """
     Reward the foot contact.
 
     Args:
-        foot_contact_weighted: Foot contact weighted tensor of shape (B, N) where B is the batch size and N is the number of feet.
-        ref_foot_contact_weighted: Reference foot contact weighted tensor of shape (B, N) where B is the batch size and N is the number of feet.
+        foot_contact_weighted: Weighted foot contact force tensor of shape (B, N) where B is the batch size and N is the number of feet.
+        ref_foot_contact: Reference foot contact tensor of shape (B, N) where B is the batch size and N is the number of feet.
     """
 
-    required_keys = ("foot_contact_weighted", "ref_foot_contact_weighted", "ref_foot_contact")
+    required_keys = ("foot_contact_weighted", "ref_foot_contact")
 
     def _compute(
-        self,
-        foot_contact_weighted: torch.Tensor,
-        ref_foot_contact_weighted: torch.Tensor,
-        ref_foot_contact: torch.Tensor,
+        self, foot_contact_weighted: torch.Tensor, ref_foot_contact: torch.Tensor
     ) -> torch.Tensor:  # type: ignore
-        # reward
-        foot_contact_weighted_error = (
-            (0.8 * ref_foot_contact_weighted - foot_contact_weighted).clamp(min=0.0)
-        ) + foot_contact_weighted * (1 - ref_foot_contact) ** 2
-        return -foot_contact_weighted_error.sum(dim=-1)
+        contact_force = foot_contact_weighted * (1 - ref_foot_contact) ** 2
+        return -torch.square(contact_force).sum(dim=-1)

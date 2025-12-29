@@ -274,6 +274,8 @@ def main(
                     obs_gt = (redis_client.ref_base_euler[:, 2] - env.base_euler[:, 2]).reshape(
                         1, -1
                     )
+                elif key == "diff_base_pos_local_yaw":
+                    obs_gt = redis_client.ref_base_lin_vel_local.reshape(1, -1)
                 else:
                     obs_gt = getattr(env, key) * env_args.obs_scales.get(key, 1.0)
                 obs_components.append(obs_gt)

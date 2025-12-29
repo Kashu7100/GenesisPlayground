@@ -291,9 +291,7 @@ def evaluate_policy(
                 terminated = env.get_terminated()
                 if terminated[0]:
                     env.hard_sync_motion(torch.IntTensor([0]))
-                env.update_buffers()
                 env.update_history()
-                env.get_reward()
                 obs, _ = (
                     wrapped_env.get_observations()
                 )  # Unpack actor and critic obs, use actor for policy

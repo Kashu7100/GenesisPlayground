@@ -533,16 +533,19 @@ class MotionEnv(LeggedRobotEnv):
         self.base_rotation_6D[:] = quat_to_rotation_6D(self.base_quat)
         self.base_euler[:] = quat_to_euler(self.base_quat)
         self.projected_gravity[:] = quat_apply(quat_inv(self.base_quat), self.global_gravity)
-        self.base_lin_vel[:] = self._robot.get_vel()
-        self.base_ang_vel[:] = self._robot.get_ang()
-        self.base_lin_vel_local[:] = self.global_to_local(self.base_lin_vel)
-        self.base_ang_vel_local[:] = self.global_to_local(self.base_ang_vel)
-        self.body_lin_vel[:] = self._robot.body_link.get_vel()
-        self.body_ang_vel[:] = self._robot.body_link.get_ang()
 
         self.link_contact_forces[:] = self._robot.link_contact_forces
         self.link_positions[:] = self._robot.link_positions
         self.link_quaternions[:] = self._robot.link_quaternions
+        self.link_lin_velocities[:] = self._robot.link_lin_velocities
+        self.link_ang_velocities[:] = self._robot.link_ang_velocities
+
+        self.base_lin_vel[:] = self.link_lin_velocities[:, 0]
+        self.base_ang_vel[:] = self.link_ang_velocities[:, 0]
+        self.base_lin_vel_local[:] = self.global_to_local(self.base_lin_vel)
+        self.base_ang_vel_local[:] = self.global_to_local(self.base_ang_vel)
+        self.body_lin_vel[:] = self.link_lin_velocities[:, self._robot.body_link_idx]
+        self.body_ang_vel[:] = self.link_ang_velocities[:, self._robot.body_link_idx]
 
         link_pos_local_yaw = self._robot.link_positions
         link_pos_local_yaw[:, :, :2] -= self.base_pos[:, None, :2]
@@ -559,8 +562,6 @@ class MotionEnv(LeggedRobotEnv):
         self.tracking_link_quat_local_yaw[:] = self.link_quat_local_yaw[
             :, self.tracking_link_idx_local
         ]
-        self.link_lin_velocities[:] = self._robot.link_lin_velocities
-        self.link_ang_velocities[:] = self._robot.link_ang_velocities
         self.tracking_link_lin_vel_global[:] = self.link_lin_velocities[
             :, self.tracking_link_idx_local
         ]

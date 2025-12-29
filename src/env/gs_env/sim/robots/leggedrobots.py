@@ -541,7 +541,8 @@ class LeggedRobotBase(BaseGymRobot):
 
     @property
     def link_lin_velocities(self) -> torch.Tensor:
-        return self._robot.get_links_vel()
+        return self._robot.get_links_vel(ref="link_com")
+        # return self._robot.get_links_vel()
 
     @property
     def link_ang_velocities(self) -> torch.Tensor:
