@@ -49,7 +49,7 @@ class PPO(BaseAlgo):
         self._curr_ep_len = torch.zeros(self.env.num_envs, device=self.device, dtype=torch.float)
 
         self._current_lr = cfg.lr
-        self._curremt_entropy_coef = cfg.entropy_coef
+        self._current_entropy_coef = cfg.entropy_coef
 
         self.use_clipped_value_loss = cfg.use_clipped_value_loss
 
@@ -275,7 +275,7 @@ class PPO(BaseAlgo):
         total_loss = (
             policy_loss
             + self.cfg.value_loss_coef * value_loss
-            - self.cfg.entropy_coef * entropy_loss
+            - self._current_entropy_coef * entropy_loss
         )
 
         # Optimization step
