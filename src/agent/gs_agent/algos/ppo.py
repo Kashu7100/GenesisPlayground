@@ -349,6 +349,7 @@ class PPO(BaseAlgo):
                 ),
                 "max_std": statistics.mean([metrics["max_std"] for metrics in train_metrics_list]),
                 "learning_rate": self._current_lr,
+                "entropy_coef": self._current_entropy_coef,
             },
             "speed": {
                 "rollout_time": rollouts_time,
