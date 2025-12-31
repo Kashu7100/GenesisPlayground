@@ -269,6 +269,11 @@ class BC(BaseAlgo):
         }
         return iteration_infos
 
+    def update_curriculum(
+        self, current_iteration: int, total_iterations: int, **kwargs: Any
+    ) -> None:
+        pass
+
     def save(self, path: Path, infos: dict[str, Any] | None = None) -> None:
         saved_dict = {
             "actor_state_dict": self._actor.state_dict(),
