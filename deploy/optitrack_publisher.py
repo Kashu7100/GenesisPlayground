@@ -140,6 +140,7 @@ class OptitrackPublisher:
 
         self.motion_quat_inv = torch.tensor([1.0, 0.0, 0.0, 0.0]).repeat(6, 1)
         self.global_yaw_inv = torch.tensor([1.0, 0.0, 0.0, 0.0])
+        self.global_xy = torch.tensor([0.0, 0.0])
         z_90_inv = quat_from_euler(torch.tensor([0.0, 0.0, -1.0]) * torch.pi / 2.0)
         self.motion_quat_inv[self.base_idx_6] = z_90_inv
         self.motion_quat_inv[self.torso_idx_6] = z_90_inv
@@ -239,6 +240,7 @@ class OptitrackPublisher:
         base_euler[1] = 0.0
         yaw = quat_from_euler(base_euler)
         self.global_yaw_inv = quat_mul(z_90, quat_inv(yaw))
+        self.global_xy = pos[self.base_idx_6, :2].clone()
         ### Local
         quat = self._reorient_quat(
             quat, [self.base_idx_6, self.torso_idx_6]
@@ -273,7 +275,8 @@ class OptitrackPublisher:
         print("=" * 80)
 
         self.client.run()
-        self.client.get_frame()
+        frame = self.client.get_frame()
+        self._parse_frame(frame)
         print("[optitrack_publisher] Successfully received data from OptiTrack server.")
         print("[optitrack_publisher] Press any key to calibrate and start publishing...")
         getch()
@@ -294,7 +297,8 @@ class OptitrackPublisher:
 
                 # Local re-orientation
                 quat6 = self._reorient_quat(quat6, list(range(6)))
-                # Global yaw
+                # Global
+                pos6[:, :2] = pos6[:, :2] - self.global_xy
                 pos6, quat6 = self._apply_yaw_inv(pos6, quat6, self.global_yaw_inv)
                 # Arm scaling (use base frame + torso rotation)
                 l_hand_pos_local, l_hand_quat_local = calc_local(
