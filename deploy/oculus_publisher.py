@@ -90,7 +90,7 @@ class OculusPublisher:
         self.l_wrist_quat_inv = torch.tensor([1.0, 0.0, 0.0, 0.0])
         self.r_wrist_quat_inv = torch.tensor([1.0, 0.0, 0.0, 0.0])
         self.g1_shoulder_y = 0.100
-        self.g1_arm_length = 0.378
+        self.g1_arm_length = 0.419
         self.g1_shoulder_z = 1.082
         self.aug_shoulder_y = self.g1_shoulder_y * 1.0
         self.aug_arm_length = self.g1_arm_length * 1.0
