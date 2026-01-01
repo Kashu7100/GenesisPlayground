@@ -43,7 +43,7 @@ def calc_global(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     R_out = quat_mul(R1, R2)
     T_out = quat_apply(R1, T2) + T1
-    return R_out, T_out
+    return T_out, R_out
 
 
 def calc_local(
@@ -51,7 +51,7 @@ def calc_local(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     R_out = quat_mul(quat_inv(R1), R2)
     T_out = quat_apply(quat_inv(R1), T2 - T1)
-    return R_out, T_out
+    return T_out, R_out
 
 
 class OptitrackPublisher:
@@ -196,24 +196,6 @@ class OptitrackPublisher:
         quat_local[idxs] = quat_mul(quat_local[idxs], self.motion_quat_inv[idxs])
         return quat_local
 
-    def _get_local(
-        self,
-        pos_global: torch.Tensor,
-        quat_global: torch.Tensor,
-        base_pos: torch.Tensor,
-        base_quat: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        relative_pos_global = pos_global.clone()
-        base_pos = pos_global[self.base_idx_6, :]
-        relative_pos_global[:, :2] -= base_pos[:2]
-        base_quat = quat_global[self.base_idx_6, :]
-        base_euler = quat_to_euler(base_quat)
-        base_euler[0] = 0.0
-        base_euler[1] = 0.0
-        inv_yaw = quat_from_euler(-base_euler)
-        pos_local, quat_local = self._apply_yaw_inv(relative_pos_global, quat_global, inv_yaw)
-        return pos_local, quat_local
-
     def _apply_yaw_inv(
         self, pos: torch.Tensor, quat: torch.Tensor, yaw_inv: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -252,6 +234,9 @@ class OptitrackPublisher:
         yaw = quat_from_euler(base_euler)
         self.global_yaw_inv = quat_mul(z_90, quat_inv(yaw))
         ### Local
+        quat = self._reorient_quat(
+            quat, [self.base_idx_6, self.torso_idx_6]
+        )  # Z-90 on Pelvis & Torso
         pos, quat = self._localize(pos, quat)
         ee_idxs_6 = [self.l_foot_idx_6, self.r_foot_idx_6, self.l_hand_idx_6, self.r_hand_idx_6]
         self.motion_quat_inv[ee_idxs_6] = quat_inv(quat[ee_idxs_6])
@@ -264,6 +249,11 @@ class OptitrackPublisher:
         self.aug_pelvis_z = pos[self.base_idx_6, 2].item()
         self.aug_pelvis_shoulder_z = aug_shoulder_z - self.aug_pelvis_z
         self._calibrated = True
+        print("[optitrack_publisher] Calibration result:")
+        print(f"  - Shoulder Y: {self.aug_shoulder_y:.3f}")
+        print(f"  - Arm Length: {self.aug_arm_length:.3f}")
+        print(f"  - Pelvis Z: {self.aug_pelvis_z:.3f}")
+        print(f"  - Pelvis Shoulder Z: {self.aug_pelvis_shoulder_z:.3f}")
 
     def run(self) -> None:
         print("=" * 80)
@@ -280,7 +270,6 @@ class OptitrackPublisher:
         getch()
 
         try:
-            print("[optitrack_publisher] Starting.")
             while True:
                 frame = self.client.get_frame()
                 self.frame_id = self.client.get_frame_number()
@@ -291,49 +280,56 @@ class OptitrackPublisher:
                 quat6 = quat51[self.motion_indices, :]
 
                 if not self._calibrated:
-                    quat6 = self._reorient_quat(quat6, [self.base_idx_6])  # Z-90 on Pelvis & Torso
                     self._calibrate(pos6, quat6)
                     continue
 
                 # Local re-orientation
-                quat6 = self._reorient_quat(quat6, [self.base_idx_6])
+                quat6 = self._reorient_quat(quat6, list(range(6)))
                 # Global yaw
                 pos6, quat6 = self._apply_yaw_inv(pos6, quat6, self.global_yaw_inv)
                 # Arm scaling (use base frame + torso rotation)
-                l_hand_pos_local, l_hand_quat_local = self._get_local(
+                l_hand_pos_local, l_hand_quat_local = calc_local(
                     pos6[self.base_idx_6],
                     quat6[self.torso_idx_6],
                     pos6[self.l_hand_idx_6],
                     quat6[self.l_hand_idx_6],
                 )
-                r_hand_pos_local, r_hand_quat_local = self._get_local(
+                r_hand_pos_local, r_hand_quat_local = calc_local(
                     pos6[self.base_idx_6],
                     quat6[self.torso_idx_6],
                     pos6[self.r_hand_idx_6],
                     quat6[self.r_hand_idx_6],
                 )
-                l_anchor = torch.tensor(
+                l_aug_anchor = torch.tensor(
                     [0.0, self.aug_shoulder_y, self.aug_pelvis_shoulder_z],
                     dtype=torch.float32,
                 )
-                r_anchor = torch.tensor(
+                l_g1_anchor = torch.tensor(
+                    [0.0, self.g1_shoulder_y, self.g1_pelvis_shoulder_z],
+                    dtype=torch.float32,
+                )
+                r_aug_anchor = torch.tensor(
                     [0.0, -self.aug_shoulder_y, self.aug_pelvis_shoulder_z],
                     dtype=torch.float32,
                 )
-                l_hand_pos_local = l_anchor + (l_hand_pos_local - l_anchor) * (
+                r_g1_anchor = torch.tensor(
+                    [0.0, -self.g1_shoulder_y, self.g1_pelvis_shoulder_z],
+                    dtype=torch.float32,
+                )
+                l_hand_pos_local = l_g1_anchor + (l_hand_pos_local - l_aug_anchor) * (
                     self.g1_arm_length / self.aug_arm_length
                 )
-                r_hand_pos_local = r_anchor + (r_hand_pos_local - r_anchor) * (
+                r_hand_pos_local = r_g1_anchor + (r_hand_pos_local - r_aug_anchor) * (
                     self.g1_arm_length / self.aug_arm_length
                 )
                 # Leg scaling
-                l_foot_pos_local, l_foot_quat_local = self._get_local(
+                l_foot_pos_local, l_foot_quat_local = calc_local(
                     pos6[self.base_idx_6],
                     quat6[self.base_idx_6],
                     pos6[self.l_foot_idx_6],
                     quat6[self.l_foot_idx_6],
                 )
-                r_foot_pos_local, r_foot_quat_local = self._get_local(
+                r_foot_pos_local, r_foot_quat_local = calc_local(
                     pos6[self.base_idx_6],
                     quat6[self.base_idx_6],
                     pos6[self.r_foot_idx_6],
@@ -362,7 +358,7 @@ class OptitrackPublisher:
                     pos6[self.base_idx_6],
                     quat6[self.base_idx_6],
                     torch.tensor(
-                        [0.0, 0.0, self.g1_pelvis_shoulder_z],
+                        [0.0, 0.0, self.g1_pelvis_torso_z],
                         dtype=torch.float32,
                     ),
                     quat_from_euler(torch.tensor([0.0, 0.0, 0.0])),
@@ -396,12 +392,12 @@ class OptitrackPublisher:
                         base_q = quat6[self.base_idx_6]
                         base_ang_vel_local_raw = quat_apply(quat_inv(base_q), base_ang_vel_raw)
 
-                        self._ema_link_lin_vel = self._ema(self._ema_link_lin_vel, link_lin_vel_raw)
-                        self._ema_base_lin_vel = self._ema(self._ema_base_lin_vel, base_lin_vel_raw)
-                        self._ema_link_ang_vel = self._ema(self._ema_link_ang_vel, link_ang_vel_raw)
-                        self._ema_base_ang_vel = self._ema(self._ema_base_ang_vel, base_ang_vel_raw)
-                        self._ema_base_ang_vel_local = self._ema(
-                            self._ema_base_ang_vel_local, base_ang_vel_local_raw
+                        self.ema_link_lin_vel = self._ema(self.ema_link_lin_vel, link_lin_vel_raw)
+                        self.ema_base_lin_vel = self._ema(self.ema_base_lin_vel, base_lin_vel_raw)
+                        self.ema_link_ang_vel = self._ema(self.ema_link_ang_vel, link_ang_vel_raw)
+                        self.ema_base_ang_vel = self._ema(self.ema_base_ang_vel, base_ang_vel_raw)
+                        self.ema_base_ang_vel_local = self._ema(
+                            self.ema_base_ang_vel_local, base_ang_vel_local_raw
                         )
 
                 self.prev_pos6 = pos6.detach().clone()
@@ -417,11 +413,11 @@ class OptitrackPublisher:
                 rset("base_quat", quat6[self.base_idx_6])
                 rset("link_pos_local", pos6_local)
                 rset("link_quat_local", quat6_local)
-                rset("base_lin_vel", self._ema_base_lin_vel)
-                rset("base_ang_vel", self._ema_base_ang_vel)
-                rset("base_ang_vel_local", self._ema_base_ang_vel_local)
-                rset("link_lin_vel", self._ema_link_lin_vel)
-                rset("link_ang_vel", self._ema_link_ang_vel)
+                rset("base_lin_vel", self.ema_base_lin_vel)
+                rset("base_ang_vel", self.ema_base_ang_vel)
+                rset("base_ang_vel_local", self.ema_base_ang_vel_local)
+                rset("link_lin_vel", self.ema_link_lin_vel)
+                rset("link_ang_vel", self.ema_link_ang_vel)
 
                 curr_time = time.time()
                 if curr_time - start_time >= 1.0 / self.freq_hz:
