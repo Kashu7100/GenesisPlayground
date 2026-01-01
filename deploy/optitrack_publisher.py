@@ -9,9 +9,11 @@ import redis
 import torch
 from gs_env.common.utils.math_utils import (
     quat_apply,
+    quat_diff,
     quat_from_euler,
     quat_inv,
     quat_mul,
+    quat_to_angle_axis,
     quat_to_euler,
 )
 from gs_env.real.config.registry import EnvArgsRegistry
@@ -59,13 +61,13 @@ class OptitrackPublisher:
     Redis keys:
         - {key}:motion:base_pos [3]
         - {key}:motion:base_quat [4] (w, x, y, z)
-        - {key}:motion:base_lin_vel [3] # TODO
-        - {key}:motion:base_ang_vel [3] # TODO
-        - {key}:motion:base_ang_vel_local [3] # TODO
+        - {key}:motion:base_lin_vel [3]
+        - {key}:motion:base_ang_vel [3]
+        - {key}:motion:base_ang_vel_local [3]
         - {key}:motion:link_pos_local [N*3] (filtered to tracking links if specified)
         - {key}:motion:link_quat_local [N*4] (filtered to tracking links if specified)
-        - {key}:motion:link_lin_vel [N*3] # TODO (global frame?)
-        - {key}:motion:link_ang_vel [N*3] # TODO (global frame?)
+        - {key}:motion:link_lin_vel [N*3]
+        - {key}:motion:link_ang_vel [N*3]
         - {key}:motion:foot_contact [F] # TODO (use raw?)
         - {key}:timestamp:base_pos [1]
         - {key}:timestamp:base_quat [1]
@@ -97,6 +99,7 @@ class OptitrackPublisher:
         self.key = key
         self.freq_hz = freq_hz
         self.frame_id = 0
+        self.frame_rate = 120.0
 
         optitrack_env_args = EnvArgsRegistry["g1_links_tracking"]
         assert isinstance(optitrack_env_args, OptitrackEnvArgs)
@@ -150,11 +153,27 @@ class OptitrackPublisher:
 
         self._calibrated = False
 
+        self.vel_ema_alpha = 0.25
+
+        self.prev_pos6: torch.Tensor
+        self.prev_quat6: torch.Tensor
+        self.prev_frame_id: int = -1
+
+        self.ema_base_lin_vel = torch.zeros(3)
+        self.ema_base_ang_vel = torch.zeros(3)
+        self.ema_base_ang_vel_local = torch.zeros(3)
+        self.ema_link_lin_vel = torch.zeros(6, 3)
+        self.ema_link_ang_vel = torch.zeros(6, 3)
+
     def close(self) -> None:
         try:
             self.client.shutdown()
         except Exception:
             pass
+
+    def _ema(self, prev: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+        a = self.vel_ema_alpha
+        return (1.0 - a) * prev + a * x
 
     def _parse_frame(
         self, frame: dict[int, list[list[float]]]
@@ -361,9 +380,35 @@ class OptitrackPublisher:
                     r_hand_quat_local,
                 )
 
-                # Publish
                 pos6_local, quat6_local = self._localize(pos6, quat6)
 
+                if self.prev_frame_id != -1:
+                    df = self.frame_id - self.prev_frame_id
+                    if df > 0:
+                        dt = df / self.frame_rate
+                        link_lin_vel_raw = (pos6 - self.prev_pos6) / dt
+                        base_lin_vel_raw = link_lin_vel_raw[self.base_idx_6]
+                        q_delta = quat_diff(quat6, self.prev_quat6)
+                        axis_angle = quat_to_angle_axis(q_delta)
+                        link_ang_vel_raw = axis_angle / dt
+                        base_ang_vel_raw = link_ang_vel_raw[self.base_idx_6]
+
+                        base_q = quat6[self.base_idx_6]
+                        base_ang_vel_local_raw = quat_apply(quat_inv(base_q), base_ang_vel_raw)
+
+                        self._ema_link_lin_vel = self._ema(self._ema_link_lin_vel, link_lin_vel_raw)
+                        self._ema_base_lin_vel = self._ema(self._ema_base_lin_vel, base_lin_vel_raw)
+                        self._ema_link_ang_vel = self._ema(self._ema_link_ang_vel, link_ang_vel_raw)
+                        self._ema_base_ang_vel = self._ema(self._ema_base_ang_vel, base_ang_vel_raw)
+                        self._ema_base_ang_vel_local = self._ema(
+                            self._ema_base_ang_vel_local, base_ang_vel_local_raw
+                        )
+
+                self.prev_pos6 = pos6.detach().clone()
+                self.prev_quat6 = quat6.detach().clone()
+                self.prev_frame_id = self.frame_id
+
+                # Publish
                 def rset(key: str, value: torch.Tensor) -> None:
                     self.r.set(f"{self.key}:motion:{key}", json.dumps(_to_list(value)))
                     self.r.set(f"{self.key}:timestamp:{key}", self.frame_id)
@@ -372,8 +417,11 @@ class OptitrackPublisher:
                 rset("base_quat", quat6[self.base_idx_6])
                 rset("link_pos_local", pos6_local)
                 rset("link_quat_local", quat6_local)
-                rset("link_lin_vel", self.zero_link_lin_vel.clone())
-                rset("link_ang_vel", self.zero_link_ang_vel.clone())
+                rset("base_lin_vel", self._ema_base_lin_vel)
+                rset("base_ang_vel", self._ema_base_ang_vel)
+                rset("base_ang_vel_local", self._ema_base_ang_vel_local)
+                rset("link_lin_vel", self._ema_link_lin_vel)
+                rset("link_ang_vel", self._ema_link_ang_vel)
 
                 curr_time = time.time()
                 if curr_time - start_time >= 1.0 / self.freq_hz:
