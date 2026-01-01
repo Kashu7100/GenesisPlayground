@@ -68,7 +68,7 @@ class OptitrackPublisher:
         - {key}:motion:link_quat_local [N*4] (filtered to tracking links if specified)
         - {key}:motion:link_lin_vel [N*3]
         - {key}:motion:link_ang_vel [N*3]
-        - {key}:motion:foot_contact [F] # TODO (use raw?)
+        - {key}:motion:foot_contact [F]
         - {key}:timestamp:base_pos [1]
         - {key}:timestamp:base_quat [1]
         - {key}:timestamp:base_lin_vel [1]
@@ -135,6 +135,8 @@ class OptitrackPublisher:
         self.torso_idx_6 = self.MOTION_NAMES.index("Spine1")
         self.l_foot_idx_6 = self.MOTION_NAMES.index("LeftFoot")
         self.r_foot_idx_6 = self.MOTION_NAMES.index("RightFoot")
+        self.l_foot_idx_51 = self.name_to_idx["LeftFoot"]
+        self.r_foot_idx_51 = self.name_to_idx["RightFoot"]
 
         self.motion_quat_inv = torch.tensor([1.0, 0.0, 0.0, 0.0]).repeat(6, 1)
         self.global_yaw_inv = torch.tensor([1.0, 0.0, 0.0, 0.0])
@@ -150,6 +152,9 @@ class OptitrackPublisher:
         self.aug_arm_length = self.g1_arm_length * 1.0
         self.aug_pelvis_shoulder_z = self.g1_pelvis_shoulder_z * 1.0
         self.aug_pelvis_z = self.g1_pelvis_z * 1.0
+        self.foot_ground_z_left = 0.0
+        self.foot_ground_z_right = 0.0
+        self.foot_contact_thresh = 0.02
 
         self._calibrated = False
 
@@ -224,6 +229,7 @@ class OptitrackPublisher:
         self,
         pos: torch.Tensor,
         quat: torch.Tensor,
+        pos51: torch.Tensor,
     ) -> None:
         ### Global
         z_90 = quat_from_euler(torch.tensor([0.0, 0.0, 1.0]) * torch.pi / 2.0)
@@ -249,6 +255,9 @@ class OptitrackPublisher:
         self.aug_pelvis_z = pos[self.base_idx_6, 2].item()
         self.aug_pelvis_shoulder_z = aug_shoulder_z - self.aug_pelvis_z
         self._calibrated = True
+        ### Foot
+        self.foot_ground_z_left = pos51[self.l_foot_idx_51, 2].item()
+        self.foot_ground_z_right = pos51[self.r_foot_idx_51, 2].item()
         print("[optitrack_publisher] Calibration result:")
         print(f"  - Shoulder Y: {self.aug_shoulder_y:.3f}")
         print(f"  - Arm Length: {self.aug_arm_length:.3f}")
@@ -280,7 +289,7 @@ class OptitrackPublisher:
                 quat6 = quat51[self.motion_indices, :]
 
                 if not self._calibrated:
-                    self._calibrate(pos6, quat6)
+                    self._calibrate(pos6, quat6, pos51)
                     continue
 
                 # Local re-orientation
@@ -376,7 +385,19 @@ class OptitrackPublisher:
                     r_hand_quat_local,
                 )
 
+                # Localize
                 pos6_local, quat6_local = self._localize(pos6, quat6)
+
+                # Foot contact
+                lz = pos51[self.l_foot_idx_51, 2].item()
+                rz = pos51[self.r_foot_idx_51, 2].item()
+                l_contact = (
+                    0.0 if (lz > self.foot_ground_z_left + self.foot_contact_thresh) else 1.0
+                )
+                r_contact = (
+                    0.0 if (rz > self.foot_ground_z_right + self.foot_contact_thresh) else 1.0
+                )
+                foot_contact = torch.tensor([l_contact, r_contact], dtype=torch.float32)
 
                 if self.prev_frame_id != -1:
                     df = self.frame_id - self.prev_frame_id
@@ -418,6 +439,7 @@ class OptitrackPublisher:
                 rset("base_ang_vel_local", self.ema_base_ang_vel_local)
                 rset("link_lin_vel", self.ema_link_lin_vel)
                 rset("link_ang_vel", self.ema_link_ang_vel)
+                rset("foot_contact", foot_contact)
 
                 curr_time = time.time()
                 if curr_time - start_time >= 1.0 / self.freq_hz:
