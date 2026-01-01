@@ -50,7 +50,7 @@ class LeggedRobotBase(BaseGymRobot):
         self._robot: RigidEntity = scene.add_entity(  # type: ignore
             material=material,
             morph=morph,
-            visualize_contact=True,
+            visualize_contact=args.visualize_contact,
             vis_mode=args.vis_mode,
         )
 
@@ -544,7 +544,8 @@ class LeggedRobotBase(BaseGymRobot):
 
     @property
     def link_lin_velocities(self) -> torch.Tensor:
-        return self._robot.get_links_vel()
+        return self._robot.get_links_vel(ref="link_com")
+        # return self._robot.get_links_vel()
 
     @property
     def link_ang_velocities(self) -> torch.Tensor:

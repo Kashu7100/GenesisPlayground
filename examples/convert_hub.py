@@ -7,6 +7,7 @@ from typing import Any, cast
 import gs_env.sim.envs as gs_envs
 import joblib
 import torch
+import yaml
 from gs_env.common.utils.math_utils import (
     quat_from_euler,
     quat_mul,
@@ -17,7 +18,7 @@ from gs_env.sim.envs.config.schema import MotionEnvArgs
 from gs_env.sim.scenes.config.registry import SceneArgsRegistry
 
 
-def twist_to_motion_data(
+def hub_to_motion_data(
     env: gs_envs.MotionEnv, data: dict[str, Any], show_viewer: bool = False
 ) -> None | dict[str, Any]:
     """
@@ -32,7 +33,7 @@ def twist_to_motion_data(
     link_names = [link.name for link in links]
     dof_names = env.dof_names
 
-    twist_order = [
+    lafan_order = [
         "left_hip_pitch_joint",
         "left_hip_roll_joint",
         "left_hip_yaw_joint",
@@ -64,7 +65,7 @@ def twist_to_motion_data(
         "right_wrist_yaw_joint",
     ]
     dof_index = []
-    for dof_name in twist_order:
+    for dof_name in lafan_order:
         dof_index.append(dof_names.index(dof_name))
     motion_data = {}
     motion_data["fps"] = data["fps"]
@@ -110,7 +111,8 @@ def twist_to_motion_data(
             if i == 0:
                 foot_last_pos = foot_pos.clone()
             foot_vel = torch.clamp(
-                torch.norm((foot_pos[..., :2] - foot_last_pos[..., :2]) / env.dt, dim=-1) - 0.15,
+                (torch.norm((foot_pos[..., :2] - foot_last_pos[..., :2]) / env.dt, dim=-1) - 0.1)
+                / 0.1,
                 0.0,
                 1.0,
             )
@@ -149,17 +151,13 @@ def twist_to_motion_data(
 
 
 if __name__ == "__main__":
-    show_viewer = False
+    show_viewer = True
 
-    csv_files = [
-        # "/Users/huangxiansheng/Project/GenesisPlayground/assets/motion/amass/DanceDB/Stefanos_1os_antrikos_karsilamas_C3D_stageii.pkl",
-        "/Users/huangxiansheng/Project/GenesisPlayground/assets/motion/amass/hub/swallow_balance.pkl",
-        # "/Users/huangxiansheng/Project/GenesisPlayground/assets/motion/amass/hub/singleleg.pkl",
-        # "/Users/xiongziyan/Python/GenesisPlayground/assets/motion/cmu/01_01.pkl",
-        # "/Users/xiongziyan/Python/GenesisPlayground/assets/motion/kit/squat04.pkl",
-    ]
+    # add files in directory assets/HuB
+    pkl_files = [f for f in Path("./assets/HuB").glob("*.pkl")]
+    # pkl_files = ["assets/HuB/squat.pkl",]
 
-    log_dir = Path("./assets/motion/amass")
+    log_dir = Path("./assets/motion/hub")
     os.makedirs(log_dir, exist_ok=True)
 
     env_args = cast(MotionEnvArgs, EnvArgsRegistry["g1_motion"]).model_copy(
@@ -174,15 +172,32 @@ if __name__ == "__main__":
     )
     env.reset()
 
-    for csv_file in csv_files:
-        with open(csv_file, "rb") as f:
-            data = joblib.load(f)
-        data = data[next(iter(data))]  # for hub format
-        motion_name = os.path.basename(csv_file).split(".")[0]
-        motion_dir = os.path.dirname(csv_file).split("/")[-1]
-        motion_path = log_dir / motion_dir / (motion_name + ".pkl")
-        motion_data = twist_to_motion_data(env=env, data=data, show_viewer=show_viewer)
-        if motion_data is not None:
-            print(f"Saving motion data to {motion_path}")
-            with open(motion_path, "wb") as f:
-                pickle.dump(motion_data, f)
+    dataset_yaml = {
+        "root_path": str(log_dir),
+        "motions": [],
+    }
+
+    for pkl_file in pkl_files:
+        with open(pkl_file, "rb") as f:
+            dict_data = joblib.load(f)
+        for motion_name in dict_data.keys():
+            data = dict_data[motion_name]
+            motion_file = motion_name + ".pkl"
+            motion_path = log_dir / motion_file
+            motion_data = hub_to_motion_data(env=env, data=data, show_viewer=show_viewer)
+            if motion_data is not None:
+                print(f"Saving motion data to {motion_path}")
+                with open(motion_path, "wb") as f:
+                    pickle.dump(motion_data, f)
+                dataset_yaml["motions"].append(
+                    {
+                        "file": motion_file,
+                        "weight": 1.0,
+                    }
+                )
+            else:
+                print(f"Skipping motion data for {motion_name} in {pkl_file}")
+
+    dataset_yaml["motions"].sort(key=lambda x: x["file"])
+    with open(log_dir / "hub.yaml", "w") as f:
+        yaml.dump(dataset_yaml, f)

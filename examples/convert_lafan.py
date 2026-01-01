@@ -7,6 +7,7 @@ from typing import Any, cast
 import gs_env.sim.envs as gs_envs
 import numpy as np
 import torch
+import yaml
 from gs_env.common.utils.math_utils import quat_to_euler
 from gs_env.sim.envs.config.registry import EnvArgsRegistry
 from gs_env.sim.envs.config.schema import MotionEnvArgs
@@ -106,7 +107,7 @@ def lafan_to_motion_data(
         return motion_data
 
     try:
-        run()
+        return run()
     except KeyboardInterrupt:
         return None
 
@@ -114,9 +115,9 @@ def lafan_to_motion_data(
 if __name__ == "__main__":
     show_viewer = False
 
-    # add files in directory assets/lafan
-    csv_files = [f for f in Path("./assets/lafan").glob("*.csv")]
-    # csv_files = ["/Users/xiongziyan/Python/GenesisPlayground/assets/lafan/run2_subject4.csv"]
+    # add files in directory assets/LAFAN
+    csv_files = [f for f in Path("./assets/LAFAN").glob("*.csv")]
+    # csv_files = ["./assets/LAFAN/run2_subject4.csv"]
 
     log_dir = Path("./assets/motion/lafan")
     os.makedirs(log_dir, exist_ok=True)
@@ -142,17 +143,22 @@ if __name__ == "__main__":
         data = np.genfromtxt(csv_file, delimiter=",")
         data = torch.from_numpy(data).to(torch.float32)
         motion_name = os.path.basename(csv_file).split(".")[0]
-        motion_path = log_dir / (motion_name + ".pkl")
+        motion_file = motion_name + ".pkl"
+        motion_path = log_dir / motion_file
         motion_data = lafan_to_motion_data(env=env, data=data, show_viewer=show_viewer)
         if motion_data is not None:
             print(f"Saving motion data to {motion_path}")
             with open(motion_path, "wb") as f:
                 pickle.dump(motion_data, f)
-    #     dataset_yaml["motions"].append({
-    #         "file": motion_name + ".pkl",
-    #         "weight": 100.0,
-    #     })
+            dataset_yaml["motions"].append(
+                {
+                    "file": motion_file,
+                    "weight": 1.0,
+                }
+            )
+        else:
+            print(f"Skipping motion data for {csv_file}")
 
-    # dataset_yaml["motions"].sort(key=lambda x: x["file"]
-    # with open(log_dir / "lafan.yaml", "w") as f:
-    #     yaml.dump(dataset_yaml, f)
+    dataset_yaml["motions"].sort(key=lambda x: x["file"])
+    with open(log_dir / "lafan.yaml", "w") as f:
+        yaml.dump(dataset_yaml, f)

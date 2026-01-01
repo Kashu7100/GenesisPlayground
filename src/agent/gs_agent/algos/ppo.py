@@ -48,8 +48,8 @@ class PPO(BaseAlgo):
         )
         self._curr_ep_len = torch.zeros(self.env.num_envs, device=self.device, dtype=torch.float)
 
-        # Adaptive learning rate tracking
         self._current_lr = cfg.lr
+        self._current_entropy_coef = cfg.entropy_coef
 
         self.use_clipped_value_loss = cfg.use_clipped_value_loss
 
@@ -275,7 +275,7 @@ class PPO(BaseAlgo):
         total_loss = (
             policy_loss
             + self.cfg.value_loss_coef * value_loss
-            - self.cfg.entropy_coef * entropy_loss
+            - self._current_entropy_coef * entropy_loss
         )
 
         # Optimization step
@@ -349,6 +349,7 @@ class PPO(BaseAlgo):
                 ),
                 "max_std": statistics.mean([metrics["max_std"] for metrics in train_metrics_list]),
                 "learning_rate": self._current_lr,
+                "entropy_coef": self._current_entropy_coef,
             },
             "speed": {
                 "rollout_time": rollouts_time,
@@ -361,6 +362,13 @@ class PPO(BaseAlgo):
             "info": rollout_infos["info"],
         }
         return iteration_infos
+
+    def update_curriculum(
+        self, current_iteration: int, total_iterations: int, **kwargs: Any
+    ) -> None:
+        self._current_entropy_coef = self.cfg.entropy_coef * (
+            1 - current_iteration / total_iterations
+        )
 
     def save(self, path: Path) -> None:
         """Save the algorithm to a file."""
