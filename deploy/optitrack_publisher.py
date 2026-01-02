@@ -144,18 +144,21 @@ class OptitrackPublisher:
         z_90_inv = quat_from_euler(torch.tensor([0.0, 0.0, -1.0]) * torch.pi / 2.0)
         self.motion_quat_inv[self.base_idx_6] = z_90_inv
         self.motion_quat_inv[self.torso_idx_6] = z_90_inv
+        # Manual
         self.g1_shoulder_y = 0.100
-        self.g1_arm_length = 0.419
+        self.g1_arm_length = 0.419 * 0.9
         self.g1_pelvis_shoulder_z = 1.082 - 0.793
         self.g1_pelvis_torso_z = 0.837 - 0.793
-        self.g1_pelvis_z = 0.793
+        self.g1_pelvis_z = 0.793 * 0.95
+        self.foot_contact_thresh = 0.04
+        self.foot_offset_x = 0.06
+        # Calibrated
         self.aug_shoulder_y = self.g1_shoulder_y * 1.0
         self.aug_arm_length = self.g1_arm_length * 1.0
         self.aug_pelvis_shoulder_z = self.g1_pelvis_shoulder_z * 1.0
         self.aug_pelvis_z = self.g1_pelvis_z * 1.0
         self.foot_ground_z_left = 0.0
         self.foot_ground_z_right = 0.0
-        self.foot_contact_thresh = 0.02
 
         self._calibrated = False
 
@@ -350,8 +353,8 @@ class OptitrackPublisher:
                 )
                 l_foot_pos_local = l_foot_pos_local * (self.g1_pelvis_z / self.aug_pelvis_z)
                 r_foot_pos_local = r_foot_pos_local * (self.g1_pelvis_z / self.aug_pelvis_z)
-                # Base height scaling
-                pos6[self.base_idx_6, 2] = pos6[self.base_idx_6, 2] * (
+                # Base scaling
+                pos6[self.base_idx_6] = pos6[self.base_idx_6] * (
                     self.g1_pelvis_z / self.aug_pelvis_z
                 )
                 # Update back
@@ -366,6 +369,14 @@ class OptitrackPublisher:
                     quat6[self.base_idx_6],
                     r_foot_pos_local,
                     r_foot_quat_local,
+                )
+                pos6[self.l_foot_idx_6] = pos6[self.l_foot_idx_6] + quat_apply(
+                    quat6[self.l_foot_idx_6],
+                    torch.tensor([self.foot_offset_x, 0.0, 0.0]),
+                )
+                pos6[self.r_foot_idx_6] = pos6[self.r_foot_idx_6] + quat_apply(
+                    quat6[self.r_foot_idx_6],
+                    torch.tensor([self.foot_offset_x, 0.0, 0.0]),
                 )
                 pos6[self.torso_idx_6], _ = calc_global(  # Quat kept original
                     pos6[self.base_idx_6],
@@ -395,11 +406,11 @@ class OptitrackPublisher:
                 # Foot contact
                 lz = pos51[self.l_foot_idx_51, 2].item()
                 rz = pos51[self.r_foot_idx_51, 2].item()
-                l_contact = (
-                    0.0 if (lz > self.foot_ground_z_left + self.foot_contact_thresh) else 1.0
+                l_contact = 1.0 - min(
+                    max((lz - self.foot_ground_z_left) / self.foot_contact_thresh, 0.0), 1.0
                 )
-                r_contact = (
-                    0.0 if (rz > self.foot_ground_z_right + self.foot_contact_thresh) else 1.0
+                r_contact = 1.0 - min(
+                    max((rz - self.foot_ground_z_right) / self.foot_contact_thresh, 0.0), 1.0
                 )
                 foot_contact = torch.tensor([l_contact, r_contact], dtype=torch.float32)
 
