@@ -415,9 +415,6 @@ class LeggedRobotBase(BaseGymRobot):
     def get_link_idx_local_by_name(self, name: str) -> int:
         return self._robot.get_link(name).idx_local
 
-    def get_joint_dofs_idx_local_by_name(self, name: str) -> list[int]:
-        return self._robot.get_joint(name).dofs_idx_local
-
     def start_logging(self) -> None:
         self._logging = True
         self._dof_pos_history = []
