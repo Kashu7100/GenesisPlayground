@@ -446,7 +446,7 @@ class OptitrackPublisher:
                 rset("foot_contact", foot_contact)
 
                 curr_time = time.time()
-                if curr_time - start_time >= 1.0 / self.freq_hz:
+                if curr_time - start_time < 1.0 / self.freq_hz:
                     time.sleep(max(0.0, 1.0 / self.freq_hz - (curr_time - start_time)))
 
         except KeyboardInterrupt:
@@ -470,5 +470,5 @@ if __name__ == "__main__":
         server_ip=args.server_ip,
         client_ip=args.client_ip,
         use_multicast=args.use_multicast,
-        freq_hz=50.0,
+        freq_hz=120.0,
     ).run()
