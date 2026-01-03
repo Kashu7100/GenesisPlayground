@@ -251,6 +251,10 @@ def main(
                         # Fallback: try env if it exposes extra ref_* tensors
                         obs_gt = getattr(env, key)
                     obs_gt = obs_gt * env_args.obs_scales.get(key, 1.0)
+                elif key == "diff_base_yaw":
+                    obs_gt = torch.zeros(1, 1, device=device_t)
+                elif key == "diff_base_pos_local_yaw":
+                    obs_gt = torch.zeros(1, 3, device=device_t)
                 else:
                     obs_gt = getattr(env, key) * env_args.obs_scales.get(key, 1.0)
                 obs_components.append(obs_gt)

@@ -1,5 +1,6 @@
 import argparse
 import json
+import pickle
 import sys
 import termios
 import time
@@ -102,7 +103,12 @@ class OptitrackPublisher:
         self.frame_id = 0
         self.frame_rate = 120.0
         self.save = save
-        self.save_data = []
+        self.save_data = {
+            "fps": 120,
+            "pos6": [],
+            "quat6": [],
+            "frame_id": [],
+        }
 
         optitrack_env_args = EnvArgsRegistry["g1_links_tracking"]
         assert isinstance(optitrack_env_args, OptitrackEnvArgs)
@@ -303,23 +309,9 @@ class OptitrackPublisher:
 
                 # Save raw
                 if self.save and self.prev_frame_id != self.frame_id:
-                    self.save_data.append(
-                        {
-                            "frame_id": self.frame_id,
-                            "pos6": pos6.detach().cpu(),
-                            "quat6": quat6.detach().cpu(),
-                        }
-                    )
-                    if len(self.save_data) >= 120 * 60:
-                        filename = f"optitrack_{self.save_data[0]['frame_id']}_{self.save_data[-1]['frame_id']}"
-                        folder = "recordings"
-                        import os
-
-                        os.makedirs(folder, exist_ok=True)
-                        filename = os.path.join(folder, filename)
-                        torch.save(self.save_data, f"{filename}.pt")
-                        print(f"[optitrack_publisher] Saved recording to {filename}.pt")
-                        self.save_data = []
+                    self.save_data["pos6"].append(pos6.detach().cpu())
+                    self.save_data["quat6"].append(quat6.detach().cpu())
+                    self.save_data["frame_id"].append(self.frame_id)
 
                 # Local re-orientation
                 quat6 = self._reorient_quat(quat6, list(range(6)))
@@ -486,6 +478,29 @@ class OptitrackPublisher:
         except KeyboardInterrupt:
             print("\n[optitrack_publisher] Stopped by user.")
         finally:
+            if self.save and len(self.save_data["frame_id"]) > 0:
+                filename = (
+                    f"optitrack_{self.save_data['frame_id'][0]}_{self.save_data['frame_id'][-1]}"
+                )
+                folder = "deploy/logs/recordings"
+                import os
+
+                self.save_data["pos6"] = torch.stack(self.save_data["pos6"], dim=0)
+                self.save_data["quat6"] = torch.stack(self.save_data["quat6"], dim=0)
+                self.save_data["frame_id"] = torch.tensor(
+                    self.save_data["frame_id"], dtype=torch.int64
+                )
+                os.makedirs(folder, exist_ok=True)
+                filename = os.path.join(folder, filename)
+                with open(f"{filename}.pkl", "wb") as f:
+                    pickle.dump(self.save_data, f)
+                print(f"[optitrack_publisher] Saved recording to {filename}.pkl")
+                self.save_data = {
+                    "fps": 120,
+                    "pos6": [],
+                    "quat6": [],
+                    "frame_id": [],
+                }
             self.close()
 
 
