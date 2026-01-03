@@ -92,6 +92,7 @@ class OptitrackPublisher:
         server_ip: str,
         client_ip: str,
         use_multicast: bool,
+        save: bool,
         freq_hz: float,
     ) -> None:
         self.r = redis.from_url(redis_url)
@@ -100,6 +101,8 @@ class OptitrackPublisher:
         self.freq_hz = freq_hz
         self.frame_id = 0
         self.frame_rate = 120.0
+        self.save = save
+        self.save_data = []
 
         optitrack_env_args = EnvArgsRegistry["g1_links_tracking"]
         assert isinstance(optitrack_env_args, OptitrackEnvArgs)
@@ -298,6 +301,26 @@ class OptitrackPublisher:
                     self._calibrate(pos6, quat6, pos51)
                     continue
 
+                # Save raw
+                if self.save and self.prev_frame_id != self.frame_id:
+                    self.save_data.append(
+                        {
+                            "frame_id": self.frame_id,
+                            "pos6": pos6.detach().cpu(),
+                            "quat6": quat6.detach().cpu(),
+                        }
+                    )
+                    if len(self.save_data) >= 120 * 60:
+                        filename = f"optitrack_{self.save_data[0]['frame_id']}_{self.save_data[-1]['frame_id']}"
+                        folder = "recordings"
+                        import os
+
+                        os.makedirs(folder, exist_ok=True)
+                        filename = os.path.join(folder, filename)
+                        torch.save(self.save_data, f"{filename}.pt")
+                        print(f"[optitrack_publisher] Saved recording to {filename}.pt")
+                        self.save_data = []
+
                 # Local re-orientation
                 quat6 = self._reorient_quat(quat6, list(range(6)))
                 # Global
@@ -473,6 +496,7 @@ if __name__ == "__main__":
     parser.add_argument("--server_ip", type=str, default="0.0.0.0")
     parser.add_argument("--client_ip", type=str, default="0.0.0.0")
     parser.add_argument("--use_multicast", action="store_true", default=False)
+    parser.add_argument("--save", action="store_true", default=False)
     args = parser.parse_args()
 
     OptitrackPublisher(
@@ -481,5 +505,6 @@ if __name__ == "__main__":
         server_ip=args.server_ip,
         client_ip=args.client_ip,
         use_multicast=args.use_multicast,
+        save=args.save,
         freq_hz=120.0,
     ).run()
