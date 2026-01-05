@@ -564,13 +564,6 @@ class LeggedRobotEnv(BaseEnv):
             base_pos = self.base_pos[0] + pos - link_pos
             self._robot.set_state(pos=base_pos)
 
-    def get_link_pose(self, link_idx_local: int) -> tuple[torch.Tensor, torch.Tensor]:
-        assert self.num_envs == 1, "Only support single environment for getting link pose"
-        self.update_buffers()
-        link_pos = self.link_positions[0][link_idx_local]
-        link_quat = self.link_quaternions[0][link_idx_local]
-        return link_pos, link_quat
-
     def set_dof_pos(self, dof_pos: torch.Tensor) -> None:
         assert self.num_envs == 1, "Only support single environment for setting dof pos"
         assert dof_pos.shape == (self._robot.dof_dim,), "Dof pos must match the number of joints"

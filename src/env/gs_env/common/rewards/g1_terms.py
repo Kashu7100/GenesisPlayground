@@ -272,6 +272,7 @@ class BaseHeightReward(RewardTerm):
 
     def _compute(self, base_pos: torch.Tensor, ref_base_pos: torch.Tensor) -> torch.Tensor:  # type: ignore
         base_height_error = torch.square(base_pos[:, 2] - ref_base_pos[:, 2])
+        print(base_pos[:, 2].max())
         return -base_height_error
 
 
