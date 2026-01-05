@@ -3,6 +3,8 @@ import json
 import redis
 import torch
 from gs_env.common.utils.math_utils import (
+    pose_diff,
+    pose_mul,
     quat_apply,
     quat_diff,
     quat_from_euler,
@@ -419,22 +421,6 @@ class RedisClient:
         return future_dict
 
 
-def calc_global(
-    T1: torch.Tensor, R1: torch.Tensor, T2: torch.Tensor, R2: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor]:
-    R_out = quat_mul(R1, R2)
-    T_out = quat_apply(R1, T2) + T1
-    return T_out, R_out
-
-
-def calc_local(
-    T1: torch.Tensor, R1: torch.Tensor, T2: torch.Tensor, R2: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor]:
-    R_out = quat_mul(quat_inv(R1), R2)
-    T_out = quat_apply(quat_inv(R1), T2 - T1)
-    return T_out, R_out
-
-
 class G1Retargeter:
     """Stateful retargeter: calibrates once, then retargets frames into robot-space motion."""
 
@@ -590,13 +576,13 @@ class G1Retargeter:
             tracked_pos, tracked_quat, self.global_yaw_inv
         )
         # Arm scaling (use base frame + torso rotation)
-        l_hand_pos_local, l_hand_quat_local = calc_local(
+        l_hand_pos_local, l_hand_quat_local = pose_diff(
             tracked_pos[self.base_idx],
             tracked_quat[self.torso_idx],
             tracked_pos[self.l_hand_idx],
             tracked_quat[self.l_hand_idx],
         )
-        r_hand_pos_local, r_hand_quat_local = calc_local(
+        r_hand_pos_local, r_hand_quat_local = pose_diff(
             tracked_pos[self.base_idx],
             tracked_quat[self.torso_idx],
             tracked_pos[self.r_hand_idx],
@@ -625,13 +611,13 @@ class G1Retargeter:
             self.g1_arm_length / self.aug_arm_length
         )
         # Leg scaling
-        l_foot_pos_local, l_foot_quat_local = calc_local(
+        l_foot_pos_local, l_foot_quat_local = pose_diff(
             tracked_pos[self.base_idx],
             tracked_quat[self.base_idx],
             tracked_pos[self.l_foot_idx],
             tracked_quat[self.l_foot_idx],
         )
-        r_foot_pos_local, r_foot_quat_local = calc_local(
+        r_foot_pos_local, r_foot_quat_local = pose_diff(
             tracked_pos[self.base_idx],
             tracked_quat[self.base_idx],
             tracked_pos[self.r_foot_idx],
@@ -644,13 +630,13 @@ class G1Retargeter:
             self.g1_pelvis_z / self.aug_pelvis_z
         )
         # Update back
-        tracked_pos[self.l_foot_idx], tracked_quat[self.l_foot_idx] = calc_global(
+        tracked_pos[self.l_foot_idx], tracked_quat[self.l_foot_idx] = pose_mul(
             tracked_pos[self.base_idx],
             tracked_quat[self.base_idx],
             l_foot_pos_local,
             l_foot_quat_local,
         )
-        tracked_pos[self.r_foot_idx], tracked_quat[self.r_foot_idx] = calc_global(
+        tracked_pos[self.r_foot_idx], tracked_quat[self.r_foot_idx] = pose_mul(
             tracked_pos[self.base_idx],
             tracked_quat[self.base_idx],
             r_foot_pos_local,
@@ -664,7 +650,7 @@ class G1Retargeter:
             tracked_quat[self.r_foot_idx],
             torch.tensor([self.foot_offset_x, 0.0, 0.0]),
         )
-        tracked_pos[self.torso_idx], _ = calc_global(  # Quat kept original
+        tracked_pos[self.torso_idx], _ = pose_mul(  # Quat kept original
             tracked_pos[self.base_idx],
             tracked_quat[self.base_idx],
             torch.tensor(
@@ -673,13 +659,13 @@ class G1Retargeter:
             ),
             quat_from_euler(torch.tensor([0.0, 0.0, 0.0])),
         )
-        tracked_pos[self.l_hand_idx], tracked_quat[self.l_hand_idx] = calc_global(
+        tracked_pos[self.l_hand_idx], tracked_quat[self.l_hand_idx] = pose_mul(
             tracked_pos[self.base_idx],
             tracked_quat[self.torso_idx],
             l_hand_pos_local,
             l_hand_quat_local,
         )
-        tracked_pos[self.r_hand_idx], tracked_quat[self.r_hand_idx] = calc_global(
+        tracked_pos[self.r_hand_idx], tracked_quat[self.r_hand_idx] = pose_mul(
             tracked_pos[self.base_idx],
             tracked_quat[self.torso_idx],
             r_hand_pos_local,
