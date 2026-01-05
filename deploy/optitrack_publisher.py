@@ -9,6 +9,8 @@ import tty
 import redis
 import torch
 from gs_env.common.utils.math_utils import (
+    pose_diff,
+    pose_mul,
     quat_apply,
     quat_diff,
     quat_from_euler,
@@ -37,22 +39,6 @@ def getch() -> str:
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
     return ch
-
-
-def calc_global(
-    T1: torch.Tensor, R1: torch.Tensor, T2: torch.Tensor, R2: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor]:
-    R_out = quat_mul(R1, R2)
-    T_out = quat_apply(R1, T2) + T1
-    return T_out, R_out
-
-
-def calc_local(
-    T1: torch.Tensor, R1: torch.Tensor, T2: torch.Tensor, R2: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor]:
-    R_out = quat_mul(quat_inv(R1), R2)
-    T_out = quat_apply(quat_inv(R1), T2 - T1)
-    return T_out, R_out
 
 
 class OptitrackPublisher:
@@ -319,13 +305,13 @@ class OptitrackPublisher:
                 pos6[:, :2] = pos6[:, :2] - self.global_xy
                 pos6, quat6 = self._apply_yaw_inv(pos6, quat6, self.global_yaw_inv)
                 # Arm scaling (use base frame + torso rotation)
-                l_hand_pos_local, l_hand_quat_local = calc_local(
+                l_hand_pos_local, l_hand_quat_local = pose_diff(
                     pos6[self.base_idx_6],
                     quat6[self.torso_idx_6],
                     pos6[self.l_hand_idx_6],
                     quat6[self.l_hand_idx_6],
                 )
-                r_hand_pos_local, r_hand_quat_local = calc_local(
+                r_hand_pos_local, r_hand_quat_local = pose_diff(
                     pos6[self.base_idx_6],
                     quat6[self.torso_idx_6],
                     pos6[self.r_hand_idx_6],
@@ -354,13 +340,13 @@ class OptitrackPublisher:
                     self.g1_arm_length / self.aug_arm_length
                 )
                 # Leg scaling
-                l_foot_pos_local, l_foot_quat_local = calc_local(
+                l_foot_pos_local, l_foot_quat_local = pose_diff(
                     pos6[self.base_idx_6],
                     quat6[self.base_idx_6],
                     pos6[self.l_foot_idx_6],
                     quat6[self.l_foot_idx_6],
                 )
-                r_foot_pos_local, r_foot_quat_local = calc_local(
+                r_foot_pos_local, r_foot_quat_local = pose_diff(
                     pos6[self.base_idx_6],
                     quat6[self.base_idx_6],
                     pos6[self.r_foot_idx_6],
@@ -373,13 +359,13 @@ class OptitrackPublisher:
                     self.g1_pelvis_z / self.aug_pelvis_z
                 )
                 # Update back
-                pos6[self.l_foot_idx_6], quat6[self.l_foot_idx_6] = calc_global(
+                pos6[self.l_foot_idx_6], quat6[self.l_foot_idx_6] = pose_mul(
                     pos6[self.base_idx_6],
                     quat6[self.base_idx_6],
                     l_foot_pos_local,
                     l_foot_quat_local,
                 )
-                pos6[self.r_foot_idx_6], quat6[self.r_foot_idx_6] = calc_global(
+                pos6[self.r_foot_idx_6], quat6[self.r_foot_idx_6] = pose_mul(
                     pos6[self.base_idx_6],
                     quat6[self.base_idx_6],
                     r_foot_pos_local,
@@ -393,7 +379,7 @@ class OptitrackPublisher:
                     quat6[self.r_foot_idx_6],
                     torch.tensor([self.foot_offset_x, 0.0, 0.0]),
                 )
-                pos6[self.torso_idx_6], _ = calc_global(  # Quat kept original
+                pos6[self.torso_idx_6], _ = pose_mul(  # Quat kept original
                     pos6[self.base_idx_6],
                     quat6[self.base_idx_6],
                     torch.tensor(
@@ -402,13 +388,13 @@ class OptitrackPublisher:
                     ),
                     quat_from_euler(torch.tensor([0.0, 0.0, 0.0])),
                 )
-                pos6[self.l_hand_idx_6], quat6[self.l_hand_idx_6] = calc_global(
+                pos6[self.l_hand_idx_6], quat6[self.l_hand_idx_6] = pose_mul(
                     pos6[self.base_idx_6],
                     quat6[self.torso_idx_6],
                     l_hand_pos_local,
                     l_hand_quat_local,
                 )
-                pos6[self.r_hand_idx_6], quat6[self.r_hand_idx_6] = calc_global(
+                pos6[self.r_hand_idx_6], quat6[self.r_hand_idx_6] = pose_mul(
                     pos6[self.base_idx_6],
                     quat6[self.torso_idx_6],
                     r_hand_pos_local,

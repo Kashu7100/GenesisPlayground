@@ -6,7 +6,7 @@ import torch
 import yaml
 
 from gs_env.common.bases.base_env import BaseEnv
-from gs_env.common.utils.math_utils import transform_RT_by
+from gs_env.common.utils.math_utils import np_pose_mul
 from gs_env.real.config.schema import OptitrackEnvArgs
 
 from .optitrack.NatNetClient import setup_optitrack
@@ -64,11 +64,11 @@ class OptitrackEnv(BaseEnv):
         """
         if name not in self.robot_link_offsets:
             raise ValueError(f"Tracked link {name} not found!")
-        aligned_quat, aligned_pos = transform_RT_by(
-            quat,
+        aligned_quat, aligned_pos = np_pose_mul(
             pos,
-            self.robot_link_offsets[name]["quat"],
+            quat,
             self.robot_link_offsets[name]["pos"],
+            self.robot_link_offsets[name]["quat"],
         )
         return aligned_pos, aligned_quat
 

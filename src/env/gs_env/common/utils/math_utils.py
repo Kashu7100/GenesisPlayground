@@ -600,36 +600,87 @@ def compute_pose_error(
         )
 
 
-def transform_RT_by(
-    R1: np.typing.NDArray[np.float32],
+def rot6d_to_rotmat(x: torch.Tensor) -> torch.Tensor:
+    """
+    Convert 6D rotation representation to rotation matrices.
+    """
+    a1 = x[..., 0:3]
+    a2 = x[..., 3:6]
+    b1 = torch.nn.functional.normalize(a1, dim=-1)
+    b2 = torch.nn.functional.normalize(a2 - (b1 * a2).sum(-1, keepdim=True) * b1, dim=-1)
+    b3 = torch.cross(b1, b2, dim=-1)
+    return torch.stack((b1, b2, b3), dim=-1)
+
+
+def pose_mul(
+    T1: torch.Tensor, R1: torch.Tensor, T2: torch.Tensor, R2: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Apply the local transform (T2, R2) to the pose (T1, R1);
+    / Apply the global transform (T1, R1) to the pose (T2, R2).
+    R = R1 * R2
+    T = R1 * T2 + T1
+    """
+    R_out = R1 @ R2
+    T_out = (R1 @ T2.unsqueeze(-1)).squeeze(-1) + T1
+    return T_out, R_out
+
+
+def pose_diff(
+    T1: torch.Tensor, R1: torch.Tensor, T2: torch.Tensor, R2: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Get local transform from (T1, R1) to (T2, R2)
+    R = R1^t * R2
+    T = R1^t * (T2 - T1)
+    """
+    R_out = R1.transpose(-1, -2) @ R2
+    T_out = (R1.transpose(-1, -2) @ (T2 - T1).unsqueeze(-1)).squeeze(-1)
+    return T_out, R_out
+
+
+def pose_inv(T: torch.Tensor, R: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Inverse local transform (T, R)
+    R_inv = R^t
+    T_inv = -R^t * T
+    """
+    R_out = R.transpose(-1, -2)
+    T_out = -(R_out @ T.unsqueeze(-1)).squeeze(-1)
+    return T_out, R_out
+
+
+def np_pose_mul(
     T1: np.typing.NDArray[np.float32],
-    R2: np.typing.NDArray[np.float32],
+    R1: np.typing.NDArray[np.float32],
     T2: np.typing.NDArray[np.float32],
+    R2: np.typing.NDArray[np.float32],
 ) -> tuple[np.typing.NDArray[np.float32], np.typing.NDArray[np.float32]]:
     """
-    Apply the offset (R2, T2) to the pose (R1, T1).
+    Apply the local transform (T2, R2) to the pose (T1, R1);
+    / Apply the global transform (T1, R1) to the pose (T2, R2).
     R = R1 * R2
     T = R1 * T2 + T1
     """
     R_out = np.array(gu.transform_quat_by_quat(R2, R1))
     T_out = np.array(gu.transform_by_quat(T2, R1) + T1)
-    return R_out, T_out
+    return T_out, R_out
 
 
-def get_RT_between(
-    R1: np.typing.NDArray[np.float32],
+def np_pose_diff(
     T1: np.typing.NDArray[np.float32],
-    R2: np.typing.NDArray[np.float32],
+    R1: np.typing.NDArray[np.float32],
     T2: np.typing.NDArray[np.float32],
+    R2: np.typing.NDArray[np.float32],
 ) -> tuple[np.typing.NDArray[np.float32], np.typing.NDArray[np.float32]]:
     """
-    Get the offset from (R1, T1) to (R2, T2).
+    Get the local transform from (T1, R1) to (T2, R2).
     R = R1^t * R2
     T = R1^t * (T2 - T1)
     """
     R_out = np.array(gu.transform_quat_by_quat(R2, gu.inv_quat(R1)))
     T_out = np.array(gu.transform_by_quat(T2 - T1, gu.inv_quat(R1)))
-    return R_out, T_out
+    return T_out, R_out
 
 
 def cross_correlation(

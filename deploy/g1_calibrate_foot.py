@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import yaml
 from g1_r2s_config import G1_CB1_LINK_NAMES, G1_CB1_POS, G1_CB1_QUAT
-from gs_env.common.utils.math_utils import get_RT_between, transform_RT_by
+from gs_env.common.utils.math_utils import np_pose_diff, np_pose_mul
 from gs_env.real.config.registry import EnvArgsRegistry as real_env_registry
 from gs_env.real.config.schema import OptitrackEnvArgs
 from gs_env.real.optitrack_env import OptitrackEnv
@@ -71,7 +71,7 @@ def main(args: argparse.Namespace) -> None:
                 idx_local = viewer_env.robot.get_link_idx_local_by_name(link_name)
                 Pose_s = viewer_env.get_link_pose(idx_local)
                 R_s, T_s = Pose_s[1].cpu().numpy(), Pose_s[0].cpu().numpy()
-                R_o, T_o = get_RT_between(R_m, T_m, R_s, T_s)
+                R_o, T_o = np_pose_diff(T_m, R_m, T_s, R_s)
                 m = 1 - 1 / offset_sampled
                 link_offsets[link_name]["pos"] = (
                     m * link_offsets[link_name]["pos"] + (1 - m) * T_o
@@ -81,11 +81,11 @@ def main(args: argparse.Namespace) -> None:
                 ).astype(np.float32)
 
                 # Visualization
-                current_quat, current_pos = transform_RT_by(
-                    R_m,
+                current_quat, current_pos = np_pose_mul(
                     T_m,
-                    link_offsets[link_name]["quat"],
+                    R_m,
                     link_offsets[link_name]["pos"],
+                    link_offsets[link_name]["quat"],
                 )
                 viewer_env.scene.set_obj_pose(
                     name=link_name,
