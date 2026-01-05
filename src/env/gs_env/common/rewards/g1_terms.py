@@ -73,7 +73,7 @@ class MotionFeetAirTimePenalty(RewardTerm):
     """
 
     required_keys = ("feet_first_contact", "feet_air_time")
-    target_feet_air_time = 0.2
+    target_feet_air_time = 0.4
 
     def _compute(
         self, feet_first_contact: torch.Tensor, feet_air_time: torch.Tensor
