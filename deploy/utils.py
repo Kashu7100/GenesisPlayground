@@ -642,14 +642,6 @@ class G1Retargeter:
             r_foot_pos_local,
             r_foot_quat_local,
         )
-        tracked_pos[self.l_foot_idx] = tracked_pos[self.l_foot_idx] + quat_apply(
-            tracked_quat[self.l_foot_idx],
-            torch.tensor([self.foot_offset_x, 0.0, 0.0]),
-        )
-        tracked_pos[self.r_foot_idx] = tracked_pos[self.r_foot_idx] + quat_apply(
-            tracked_quat[self.r_foot_idx],
-            torch.tensor([self.foot_offset_x, 0.0, 0.0]),
-        )
         tracked_pos[self.torso_idx], _ = pose_mul(  # Quat kept original
             tracked_pos[self.base_idx],
             tracked_quat[self.base_idx],
@@ -670,6 +662,15 @@ class G1Retargeter:
             tracked_quat[self.torso_idx],
             r_hand_pos_local,
             r_hand_quat_local,
+        )
+        # Foot move forward
+        tracked_pos[self.l_foot_idx] = tracked_pos[self.l_foot_idx] + quat_apply(
+            tracked_quat[self.l_foot_idx],
+            torch.tensor([self.foot_offset_x, 0.0, 0.0]),
+        )
+        tracked_pos[self.r_foot_idx] = tracked_pos[self.r_foot_idx] + quat_apply(
+            tracked_quat[self.r_foot_idx],
+            torch.tensor([self.foot_offset_x, 0.0, 0.0]),
         )
 
         # Localize
