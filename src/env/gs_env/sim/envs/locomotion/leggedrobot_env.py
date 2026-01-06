@@ -628,6 +628,10 @@ class LeggedRobotEnv(BaseEnv):
         return local_flat.reshape(global_vec_shape)
 
     @property
+    def args(self) -> Any:
+        return self._args
+
+    @property
     def scene(self) -> scenes.CustomScene | scenes.FlatScene:
         return self._scene
 
