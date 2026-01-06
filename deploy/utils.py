@@ -574,7 +574,7 @@ class G1Retargeter:
 
     def step(
         self, tracked_pos: torch.Tensor, tracked_quat: torch.Tensor, frame_id: int
-    ) -> dict[str, torch.Tensor] | None:
+    ) -> dict[str, torch.Tensor]:
         if not self._calibrated:
             self._calibrate(tracked_pos, tracked_quat)
 

@@ -105,49 +105,43 @@ def optitrack_to_motion_data(
                     frame_id=frame_id,
                 )
 
-            # Skip first frame (calibration frame)
-            if retargeted is None:
-                continue
-
             # Store the last valid retargeted output
             last_valid_retargeted = retargeted
             prev_frame_id = frame_id
 
             # Extract retargeted base pose
-            base_pos = retargeted["base_pos"]  # (3,)
-            base_quat = retargeted["base_quat"]  # (4,)
+            base_pos = retargeted["base_pos"].clone()  # (3,)
+            base_quat = retargeted["base_quat"].clone()  # (4,)
             dof_pos = torch.zeros(dof_dim, dtype=torch.float32)
             env.robot.set_state(
                 pos=base_pos.unsqueeze(0),
                 quat=base_quat.unsqueeze(0),
                 dof_pos=dof_pos.unsqueeze(0),
             )
-            for link_name in env.scene.objects.keys():  # type: ignore
-                if link_name in link_name_to_idx:
-                    link_idx = link_name_to_idx[link_name]
-                    if link_idx < retargeted["link_pos_local"].shape[0]:
-                        quat_yaw = quat_from_angle_axis(
-                            quat_to_euler(base_quat)[2], torch.tensor([0.0, 0.0, 1.0])
-                        )
-                        ref_link_pos = quat_apply(
-                            quat_yaw, retargeted["link_pos_local"][link_idx, :]
-                        )
-                        ref_link_pos[:2] += base_pos[:2]
-                        ref_link_quat = quat_mul(
-                            quat_yaw, retargeted["link_quat_local"][link_idx, :]
-                        )
+            quat_yaw = quat_from_angle_axis(
+                quat_to_euler(base_quat)[2], torch.tensor([0.0, 0.0, 1.0])
+            )
+            link_pos = quat_apply(quat_yaw, retargeted["link_pos_local"].clone())
+            link_pos[:, :2] += base_pos[None, :2]
+            link_quat = quat_mul(quat_yaw, retargeted["link_quat_local"].clone())
+            if show_viewer:
+                for link_name in env.scene.objects.keys():  # type: ignore
+                    if link_name in link_name_to_idx:
+                        link_idx = link_name_to_idx[link_name]
                         env.scene.set_obj_pose(
-                            link_name, pos=ref_link_pos[None, :], quat=ref_link_quat[None, :]
-                        )  # type: ignore
+                            link_name,
+                            pos=link_pos[None, link_idx, :],
+                            quat=link_quat[None, link_idx, :],
+                        )
 
             env.update_buffers()
 
             # Extract state from environment
-            pos_list.append(env.base_pos[0].clone())
-            quat_list.append(env.base_quat[0].clone())
+            pos_list.append(retargeted["base_pos"].clone())
+            quat_list.append(retargeted["base_quat"].clone())
             dof_pos_list.append(env.dof_pos[0].clone())  # Store zeros as requested
-            link_pos_list.append(env.link_positions[0].clone())
-            link_quat_list.append(env.link_quaternions[0].clone())
+            link_pos_list.append(link_pos.clone())
+            link_quat_list.append(link_quat.clone())
 
             # compute foot contact
             foot_pos = env.link_positions[0, foot_links_idx, :]
@@ -180,7 +174,6 @@ def optitrack_to_motion_data(
                         color=(0.0, 0.0, 1.0),
                     )
 
-            if show_viewer:
                 env.scene.scene.step()
                 while time.time() - last_update_time < 1 / motion_data["fps"]:
                     time.sleep(0.01)
@@ -206,11 +199,11 @@ def optitrack_to_motion_data(
 
 
 if __name__ == "__main__":
-    show_viewer = True
+    show_viewer = False
 
     # Find pickle files saved by optitrack_publisher.py in assets/OptiTrack
     # pkl_files = list(Path("./assets/OptiTrack").glob("*.pkl"))
-    pkl_files = ["./assets/OptiTrack/manipulation_0.pkl"]
+    pkl_files = ["./assets/OptiTrack/walk_random_0.pkl"]
 
     log_dir = Path("./assets/motion/optitrack")
     os.makedirs(log_dir, exist_ok=True)
