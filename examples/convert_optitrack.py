@@ -8,7 +8,7 @@ from typing import Any, cast
 import gs_env.sim.envs as gs_envs
 import torch
 import yaml
-from gs_env.common.utils.math_utils import quat_to_euler
+from gs_env.common.utils.math_utils import quat_apply, quat_from_angle_axis, quat_mul, quat_to_euler
 from gs_env.sim.envs.config.registry import EnvArgsRegistry
 from gs_env.sim.envs.config.schema import MotionEnvArgs
 
@@ -125,10 +125,20 @@ def optitrack_to_motion_data(
             for link_name in env.scene.objects.keys():  # type: ignore
                 if link_name in link_name_to_idx:
                     link_idx = link_name_to_idx[link_name]
-                    if link_idx < retargeted["link_pos_local"].shape[1]:
-                        ref_link_pos = retargeted["link_pos_local"][:, link_idx, :]
-                        ref_link_quat = retargeted["link_quat_local"][:, link_idx, :]
-                        env.scene.set_obj_pose(link_name, pos=ref_link_pos, quat=ref_link_quat)  # type: ignore
+                    if link_idx < retargeted["link_pos_local"].shape[0]:
+                        quat_yaw = quat_from_angle_axis(
+                            quat_to_euler(base_quat)[2], torch.tensor([0.0, 0.0, 1.0])
+                        )
+                        ref_link_pos = quat_apply(
+                            quat_yaw, retargeted["link_pos_local"][link_idx, :]
+                        )
+                        ref_link_pos[:2] += base_pos[:2]
+                        ref_link_quat = quat_mul(
+                            quat_yaw, retargeted["link_quat_local"][link_idx, :]
+                        )
+                        env.scene.set_obj_pose(
+                            link_name, pos=ref_link_pos[None, :], quat=ref_link_quat[None, :]
+                        )  # type: ignore
 
             env.update_buffers()
 
@@ -196,11 +206,11 @@ def optitrack_to_motion_data(
 
 
 if __name__ == "__main__":
-    show_viewer = False
+    show_viewer = True
 
     # Find pickle files saved by optitrack_publisher.py in assets/OptiTrack
-    pkl_files = list(Path("./assets/OptiTrack").glob("*.pkl"))
-    # pkl_files = ["./assets/OptiTrack/walk_random_0.pkl"]
+    # pkl_files = list(Path("./assets/OptiTrack").glob("*.pkl"))
+    pkl_files = ["./assets/OptiTrack/manipulation_0.pkl"]
 
     log_dir = Path("./assets/motion/optitrack")
     os.makedirs(log_dir, exist_ok=True)
@@ -236,7 +246,7 @@ if __name__ == "__main__":
                 print(f"Found keys: {list(optitrack_data.keys())}")
                 continue
 
-            motion_name = pkl_file.stem  # Filename without extension
+            motion_name = Path(pkl_file).stem
             motion_file = motion_name + ".pkl"
             motion_path = log_dir / motion_file
 

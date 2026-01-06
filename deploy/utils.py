@@ -450,22 +450,6 @@ class G1Retargeter:
     def __init__(self) -> None:
         self.frame_rate = 120.0
 
-        self.zero_link_pos_local = torch.tensor(
-            [
-                [0.0, 0.1, 0.04],
-                [0.0, -0.1, 0.04],
-                [0.2, 0.2, 0.87],
-                [0.2, -0.2, 0.87],
-                [0.0, 0.0, 0.83],
-                [0.0, 0.0, 0.79],
-            ],
-            dtype=torch.float32,
-        )
-        self.zero_link_quat_local = torch.zeros(6, 4)
-        self.zero_link_quat_local[:, 0] = 1.0
-        self.zero_link_lin_vel = torch.zeros(6, 3)
-        self.zero_link_ang_vel = torch.zeros(6, 3)
-
         # Indices into the 6-link tensors (fixed order above)
         self.l_foot_idx = 0
         self.r_foot_idx = 1
@@ -477,9 +461,6 @@ class G1Retargeter:
         self.motion_quat_inv = torch.tensor([1.0, 0.0, 0.0, 0.0]).repeat(6, 1)
         self.global_yaw_inv = torch.tensor([1.0, 0.0, 0.0, 0.0])
         self.global_xy = torch.tensor([0.0, 0.0])
-        z_90_inv = quat_from_euler(torch.tensor([0.0, 0.0, -1.0]) * torch.pi / 2.0)
-        self.motion_quat_inv[self.base_idx] = z_90_inv
-        self.motion_quat_inv[self.torso_idx] = z_90_inv
         # Manual
         self.g1_shoulder_y = 0.100
         self.g1_arm_length = 0.419 * 0.9
@@ -487,6 +468,14 @@ class G1Retargeter:
         self.g1_pelvis_torso_z = 0.837 - 0.793
         self.g1_pelvis_z = 0.793 * 0.95
         self.foot_offset_x = 0.06
+        self.l_g1_anchor = torch.tensor(
+            [0.0, self.g1_shoulder_y, self.g1_pelvis_shoulder_z],
+            dtype=torch.float32,
+        )
+        self.r_g1_anchor = torch.tensor(
+            [0.0, -self.g1_shoulder_y, self.g1_pelvis_shoulder_z],
+            dtype=torch.float32,
+        )
         # Calibrated
         self.aug_shoulder_y = self.g1_shoulder_y * 1.0
         self.aug_arm_length = self.g1_arm_length * 1.0
@@ -561,13 +550,21 @@ class G1Retargeter:
         ee_idxs_6 = [self.l_foot_idx, self.r_foot_idx, self.l_hand_idx, self.r_hand_idx]
         self.motion_quat_inv[ee_idxs_6] = quat_inv(tracked_quat[ee_idxs_6])
         ### Scale
-        left_pos = tracked_pos[self.l_hand_idx]
-        right_pos = tracked_pos[self.r_hand_idx]
-        self.aug_shoulder_y = (left_pos[1].item() - right_pos[1].item()) / 2.0
-        self.aug_arm_length = (left_pos[0].item() + right_pos[0].item()) / 2.0
-        aug_shoulder_z = (left_pos[2].item() + right_pos[2].item()) / 2.0
+        left_hand_pos = tracked_pos[self.l_hand_idx]
+        right_hand_pos = tracked_pos[self.r_hand_idx]
+        self.aug_shoulder_y = (left_hand_pos[1].item() - right_hand_pos[1].item()) / 2.0
+        self.aug_arm_length = (left_hand_pos[0].item() + right_hand_pos[0].item()) / 2.0
+        aug_shoulder_z = (left_hand_pos[2].item() + right_hand_pos[2].item()) / 2.0
         self.aug_pelvis_z = tracked_pos[self.base_idx, 2].item()
         self.aug_pelvis_shoulder_z = aug_shoulder_z - self.aug_pelvis_z
+        self.l_aug_anchor = torch.tensor(
+            [0.0, self.aug_shoulder_y, self.aug_pelvis_shoulder_z],
+            dtype=torch.float32,
+        )
+        self.r_aug_anchor = torch.tensor(
+            [0.0, -self.aug_shoulder_y, self.aug_pelvis_shoulder_z],
+            dtype=torch.float32,
+        )
         self._calibrated = True
         print("Calibration result:")
         print(f"  - Shoulder Y: {self.aug_shoulder_y:.3f}")
@@ -580,7 +577,6 @@ class G1Retargeter:
     ) -> dict[str, torch.Tensor] | None:
         if not self._calibrated:
             self._calibrate(tracked_pos, tracked_quat)
-            return None
 
         # Local re-orientation
         tracked_quat = self._reorient_quat(tracked_quat, list(range(6)))
@@ -602,26 +598,10 @@ class G1Retargeter:
             tracked_pos[self.r_hand_idx],
             tracked_quat[self.r_hand_idx],
         )
-        l_aug_anchor = torch.tensor(
-            [0.0, self.aug_shoulder_y, self.aug_pelvis_shoulder_z],
-            dtype=torch.float32,
-        )
-        l_g1_anchor = torch.tensor(
-            [0.0, self.g1_shoulder_y, self.g1_pelvis_shoulder_z],
-            dtype=torch.float32,
-        )
-        r_aug_anchor = torch.tensor(
-            [0.0, -self.aug_shoulder_y, self.aug_pelvis_shoulder_z],
-            dtype=torch.float32,
-        )
-        r_g1_anchor = torch.tensor(
-            [0.0, -self.g1_shoulder_y, self.g1_pelvis_shoulder_z],
-            dtype=torch.float32,
-        )
-        l_hand_pos_local = l_g1_anchor + (l_hand_pos_local - l_aug_anchor) * (
+        l_hand_pos_local = self.l_g1_anchor + (l_hand_pos_local - self.l_aug_anchor) * (
             self.g1_arm_length / self.aug_arm_length
         )
-        r_hand_pos_local = r_g1_anchor + (r_hand_pos_local - r_aug_anchor) * (
+        r_hand_pos_local = self.r_g1_anchor + (r_hand_pos_local - self.r_aug_anchor) * (
             self.g1_arm_length / self.aug_arm_length
         )
         # Leg scaling

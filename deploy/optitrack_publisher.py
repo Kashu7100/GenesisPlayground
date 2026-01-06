@@ -701,14 +701,14 @@ class RedisMotionPublisher:
                     self.save_data["quat"].append(tracked_quat.detach().cpu())
                     self.save_data["frame_id"].append(frame_id)
 
-                out = self.retargeter.step(
+                retargeted = self.retargeter.step(
                     tracked_pos=tracked_pos,
                     tracked_quat=tracked_quat,
                     frame_id=frame_id,
                 )
-                if out is not None:
-                    out["foot_contact"] = self._get_foot_contact(all_link_pos)
-                    for k, v in out.items():
+                if retargeted is not None:
+                    retargeted["foot_contact"] = self._get_foot_contact(all_link_pos)
+                    for k, v in retargeted.items():
                         self.publish(k, v, frame_id)
 
                 curr_time = time.time()
