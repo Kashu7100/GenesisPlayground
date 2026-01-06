@@ -4,9 +4,9 @@ from pathlib import Path
 
 import fire
 import torch
+from gs_env.common.utils.math_utils import quat_apply, quat_from_angle_axis, quat_mul, quat_to_euler
 from gs_env.common.utils.motion_utils import MotionLib, build_motion_obs_from_dict
 from gs_env.sim.envs.config.schema import MotionEnvArgs
-from gs_env.sim.scenes.config.registry import SceneArgsRegistry
 
 # Add examples to path to import utils
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -83,7 +83,6 @@ def main(
 
     # Load checkpoint and env_args
     policy, env_args = load_checkpoint_and_env_args(exp_name, num_ckpt, device)
-    env_args = env_args.model_copy(update={"scene_args": SceneArgsRegistry["flat_scene_legged"]})
 
     if sim:
         print("Running in SIMULATION mode")
@@ -203,6 +202,7 @@ def main(
             _ = ref_link_ang_vel
             _ = ref_foot_contact
             _ = ref_foot_contact_weighted
+            ref_base_euler = quat_to_euler(ref_base_quat)
 
             # Construct observation (matching training observation structure)
             obs_components = []
@@ -251,6 +251,10 @@ def main(
                         # Fallback: try env if it exposes extra ref_* tensors
                         obs_gt = getattr(env, key)
                     obs_gt = obs_gt * env_args.obs_scales.get(key, 1.0)
+                elif key == "diff_base_yaw":
+                    obs_gt = (ref_base_euler[0, 2] - env.base_euler[0, 2]).reshape(1, -1)
+                elif key == "diff_base_pos_local_yaw":
+                    obs_gt = ref_base_lin_vel * 0.0
                 else:
                     obs_gt = getattr(env, key) * env_args.obs_scales.get(key, 1.0)
                 obs_components.append(obs_gt)
@@ -271,6 +275,42 @@ def main(
                 if terminated[0]:
                     env.reset_idx(torch.IntTensor([0]))  # type: ignore
 
+                ref_quat_yaw = quat_from_angle_axis(
+                    ref_base_euler[0, 2],
+                    torch.tensor([0, 0, 1], device=env.device, dtype=torch.float),
+                )
+                link_name_to_idx = {
+                    link_name: idx for idx, link_name in enumerate(env.args.tracking_link_names)
+                }
+                env.scene.scene.clear_debug_objects()  # type: ignore
+                for link_name in env.scene.objects.keys():  # type: ignore
+                    if link_name in link_name_to_idx:
+                        link_idx = link_name_to_idx[link_name]
+                        if link_idx < ref_link_pos_local.shape[1]:
+                            ref_link_pos = ref_link_pos_local[:, link_idx, :]
+                            ref_link_quat = ref_link_quat_local[:, link_idx, :]
+                            ref_link_pos = quat_apply(ref_quat_yaw, ref_link_pos)
+                            ref_link_pos[:, :2] += ref_base_pos[:, :2]
+                            ref_link_quat = quat_mul(ref_quat_yaw, ref_link_quat)
+                            env.scene.set_obj_pose(link_name, pos=ref_link_pos, quat=ref_link_quat)  # type: ignore
+                        else:
+                            continue
+                        if link_name == "left_ankle_roll_link":
+                            env.scene.scene.draw_debug_arrow(
+                                ref_link_pos,
+                                ref_foot_contact[0, 0]
+                                * torch.tensor([0.0, 0.0, 1.0], device=env.device),
+                                radius=0.01,
+                                color=(0.0, 0.0, 1.0),
+                            )
+                        if link_name == "right_ankle_roll_link":
+                            env.scene.scene.draw_debug_arrow(
+                                ref_link_pos,
+                                ref_foot_contact[0, 1]
+                                * torch.tensor([0.0, 0.0, 1.0], device=env.device),
+                                radius=0.01,
+                                color=(0.0, 0.0, 1.0),
+                            )
             last_action_t = action_t.clone()
             step_id += 1
 
