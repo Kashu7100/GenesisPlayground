@@ -706,10 +706,9 @@ class RedisMotionPublisher:
                     tracked_quat=tracked_quat,
                     frame_id=frame_id,
                 )
-                if retargeted is not None:
-                    retargeted["foot_contact"] = self._get_foot_contact(all_link_pos)
-                    for k, v in retargeted.items():
-                        self.publish(k, v, frame_id)
+                retargeted["foot_contact"] = self._get_foot_contact(all_link_pos)
+                for k, v in retargeted.items():
+                    self.publish(k, v, frame_id)
 
                 curr_time = time.time()
                 if curr_time - start_time < 1.0 / self.freq_hz:
