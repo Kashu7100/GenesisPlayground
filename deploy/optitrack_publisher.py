@@ -638,6 +638,7 @@ class RedisMotionPublisher:
             "pos": [],
             "quat": [],
             "frame_id": [],
+            "foot_contact": [],
         }
 
         # Foot contact calibration/state (computed from raw 51-link positions)
@@ -695,10 +696,12 @@ class RedisMotionPublisher:
 
                 tracked_pos = all_link_pos[self._tracked_indices_51, :]
                 tracked_quat = all_link_quat[self._tracked_indices_51, :]
+                foot_contact = self._get_foot_contact(all_link_pos)
 
                 if self.save:
                     self.save_data["pos"].append(tracked_pos.detach().cpu())
                     self.save_data["quat"].append(tracked_quat.detach().cpu())
+                    self.save_data["foot_contact"].append(foot_contact.detach().cpu())
                     self.save_data["frame_id"].append(frame_id)
 
                 retargeted = self.retargeter.step(
@@ -706,7 +709,7 @@ class RedisMotionPublisher:
                     tracked_quat=tracked_quat,
                     frame_id=frame_id,
                 )
-                retargeted["foot_contact"] = self._get_foot_contact(all_link_pos)
+                retargeted["foot_contact"] = foot_contact
                 for k, v in retargeted.items():
                     self.publish(k, v, frame_id)
 
@@ -722,6 +725,7 @@ class RedisMotionPublisher:
                 )
                 self.save_data["pos"] = torch.stack(self.save_data["pos"], dim=0)
                 self.save_data["quat"] = torch.stack(self.save_data["quat"], dim=0)
+                self.save_data["foot_contact"] = torch.stack(self.save_data["foot_contact"], dim=0)
                 self.save_data["frame_id"] = torch.tensor(
                     self.save_data["frame_id"], dtype=torch.int64
                 )

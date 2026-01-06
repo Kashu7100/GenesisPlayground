@@ -79,23 +79,25 @@ def optitrack_to_motion_data(
         last_update_time = time.time()
         foot_links_idx = env.robot.foot_links_idx
 
-        foot_last_pos: torch.Tensor | None = None
         prev_frame_id: int | None = None
         last_valid_retargeted: dict[str, torch.Tensor] | None = None
 
-        for i in range(num_frames):
+        i = 0
+        while i < num_frames - 1:
             # Get tracked link poses for this frame
             frame_tracked_pos = tracked_pos[i]  # (6, 3)
             frame_tracked_quat = tracked_quat[i]  # (6, 4)
             frame_id = frame_ids[i]
+            frame_foot_contact = optitrack_data["foot_contact"][i]  # (2,)
 
             # Check if there are skipped frame IDs
             if prev_frame_id is not None and frame_id - prev_frame_id > 1:
                 # Frame IDs were skipped, use the latest valid retargeted value
                 if last_valid_retargeted is not None:
                     retargeted = last_valid_retargeted
+                    frame_id = prev_frame_id + 1
+                    i -= 1
                 else:
-                    # No previous valid retargeted, skip this frame
                     continue
             else:
                 # Retarget tracked links to robot-space base pose and link poses
@@ -104,6 +106,7 @@ def optitrack_to_motion_data(
                     tracked_quat=frame_tracked_quat,
                     frame_id=frame_id,
                 )
+            i += 1
 
             # Store the last valid retargeted output
             last_valid_retargeted = retargeted
@@ -142,34 +145,15 @@ def optitrack_to_motion_data(
             dof_pos_list.append(env.dof_pos[0].clone())  # Store zeros as requested
             link_pos_list.append(link_pos.clone())
             link_quat_list.append(link_quat.clone())
+            foot_contact_list.append(frame_foot_contact.clone())
 
-            # compute foot contact
-            foot_pos = env.link_positions[0, foot_links_idx, :]
-            foot_quat = env.link_quaternions[0, foot_links_idx, :]
-            foot_euler = quat_to_euler(foot_quat)
-            foot_tilt = torch.clamp(
-                (torch.abs(foot_euler[:, 0]) + torch.abs(foot_euler[:, 1]) - 0.4) / 0.4, 0.0, 1.0
-            )
-            foot_lift = torch.clamp((foot_pos[:, 2] - 0.15) / 0.15, 0.0, 1.0)
-            if foot_last_pos is None:
-                foot_last_pos = foot_pos.clone()
-            foot_vel = torch.clamp(
-                (torch.norm((foot_pos[..., :2] - foot_last_pos[..., :2]) / env.dt, dim=-1) - 0.1)
-                / 0.1,
-                0.0,
-                1.0,
-            )
-            foot_last_pos = foot_pos.clone()
-            foot_not_contact = ((foot_tilt + foot_lift + foot_vel) / 1.5).clamp(0.0, 1.0)
-            foot_contact = 1 - foot_not_contact
-            foot_contact_list.append(foot_contact)
-
+            foot_pos = link_pos[[0, 1], :]
             if show_viewer:
                 env.scene.scene.clear_debug_objects()
                 for j in range(len(foot_links_idx)):
                     env.scene.scene.draw_debug_arrow(
                         foot_pos[j],
-                        foot_contact[j] * torch.tensor([0.0, 0.0, 0.5]),
+                        frame_foot_contact[j] * torch.tensor([0.0, 0.0, 0.5]),
                         radius=0.01,
                         color=(0.0, 0.0, 1.0),
                     )
@@ -199,11 +183,11 @@ def optitrack_to_motion_data(
 
 
 if __name__ == "__main__":
-    show_viewer = False
+    show_viewer = True
 
     # Find pickle files saved by optitrack_publisher.py in assets/OptiTrack
     # pkl_files = list(Path("./assets/OptiTrack").glob("*.pkl"))
-    pkl_files = ["./assets/OptiTrack/walk_random_0.pkl"]
+    pkl_files = ["./assets/OptiTrack/walk_straight_0.pkl"]
 
     log_dir = Path("./assets/motion/optitrack")
     os.makedirs(log_dir, exist_ok=True)

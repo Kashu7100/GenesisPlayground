@@ -187,6 +187,7 @@ def main(
                 redis_client.ref_base_euler[:, 2],
                 torch.tensor([0, 0, 1], device=env.device, dtype=torch.float),
             )
+            env.scene.scene.clear_debug_objects()
             for link_name in env.scene.objects.keys():  # type: ignore
                 if link_name in link_name_to_idx:
                     link_idx = link_name_to_idx[link_name]
@@ -197,6 +198,24 @@ def main(
                         ref_link_pos[:, :2] += redis_client.ref_base_pos[:, :2]
                         ref_link_quat = quat_mul(ref_quat_yaw, ref_link_quat)
                         env.scene.set_obj_pose(link_name, pos=ref_link_pos, quat=ref_link_quat)  # type: ignore
+                    else:
+                        continue
+                    if link_name == "left_ankle_roll_link":
+                        env.scene.scene.draw_debug_arrow(
+                            ref_link_pos,
+                            redis_client.ref_foot_contact[0, 0]
+                            * torch.tensor([0.0, 0.0, 1.0], device=env.device),
+                            radius=0.01,
+                            color=(0.0, 0.0, 1.0),
+                        )
+                    if link_name == "right_ankle_roll_link":
+                        env.scene.scene.draw_debug_arrow(
+                            ref_link_pos,
+                            redis_client.ref_foot_contact[0, 1]
+                            * torch.tensor([0.0, 0.0, 1.0], device=env.device),
+                            radius=0.01,
+                            color=(0.0, 0.0, 1.0),
+                        )
 
             env.scene.scene.step()  # type: ignore
             step_id += 1
