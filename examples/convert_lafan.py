@@ -115,9 +115,9 @@ def lafan_to_motion_data(
 if __name__ == "__main__":
     show_viewer = False
 
-    # add files in directory assets/LAFAN
-    csv_files = [f for f in Path("./assets/LAFAN").glob("*.csv")]
-    # csv_files = ["./assets/LAFAN/run2_subject4.csv"]
+    # add files in directory assets/lafan
+    csv_files = [f for f in Path("./assets/lafan").glob("*.csv")]
+    # csv_files = ["./assets/lafan/run2_subject4.csv"]
 
     log_dir = Path("./assets/motion/lafan")
     os.makedirs(log_dir, exist_ok=True)
