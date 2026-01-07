@@ -151,7 +151,7 @@ def hub_to_motion_data(
 
 
 if __name__ == "__main__":
-    show_viewer = True
+    show_viewer = False
 
     # add files in directory assets/HuB
     pkl_files = [f for f in Path("./assets/HuB").glob("*.pkl")]

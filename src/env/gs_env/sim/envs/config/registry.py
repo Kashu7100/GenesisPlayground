@@ -168,7 +168,7 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
         "WaistVelPenalty": 0.2,
         "FeetSlidePenalty": 5.0,
         "MotionFeetAirTimePenalty": 100.0,
-        "FeetContactForceLimitPenalty": 1.0,
+        "FeetContactForceLimitPenalty": 2.0,
     },
     img_resolution=(480, 270),
     action_latency=0,
@@ -302,11 +302,67 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
         "base_quat_error": 1.0,
         "base_lin_vel_error": 2.0,
     },
+    # observed_steps={
+    #     "base_pos": [1, 2, 3, 4, 6, 8, 12, 16, 24, 32],
+    #     "base_quat": [1, 2, 3, 4, 6, 8, 12, 16, 24, 32],
+    #     "base_lin_vel": [1, 2, 3, 4, 6, 8, 12, 16, 24, 32],
+    #     "base_ang_vel": [1, 2, 3, 4, 6, 8, 12, 16, 24, 32],
+    #     "base_ang_vel_local": [
+    #         1,
+    #     ],
+    #     "dof_pos": [
+    #         1,
+    #     ],
+    #     "dof_vel": [
+    #         1,
+    #     ],
+    #     "link_pos_local": [
+    #         1,
+    #     ],
+    #     "link_quat_local": [
+    #         1,
+    #     ],
+    #     "link_lin_vel": [
+    #         1,
+    #     ],
+    #     "link_ang_vel": [
+    #         1,
+    #     ],
+    #     "foot_contact": [1, 2, 3, 4, 6, 8, 12, 16, 24, 32],
+    # },
+    # observed_steps={
+    #     "base_pos": [1, 2, 3, 4, 6, 8, 12, 16],
+    #     "base_quat": [1, 2, 3, 4, 6, 8, 12, 16],
+    #     "base_lin_vel": [1, 2, 3, 4, 6, 8, 12, 16],
+    #     "base_ang_vel": [1, 2, 3, 4, 6, 8, 12, 16],
+    #     "base_ang_vel_local": [
+    #         1,
+    #     ],
+    #     "dof_pos": [
+    #         1,
+    #     ],
+    #     "dof_vel": [
+    #         1,
+    #     ],
+    #     "link_pos_local": [
+    #         1,
+    #     ],
+    #     "link_quat_local": [
+    #         1,
+    #     ],
+    #     "link_lin_vel": [
+    #         1,
+    #     ],
+    #     "link_ang_vel": [
+    #         1,
+    #     ],
+    #     "foot_contact": [1, 2, 3, 4, 6, 8, 12, 16],
+    # },
     observed_steps={
-        "base_pos": [1, 2, 3, 4, 6, 8, 12, 16, 24, 32],
-        "base_quat": [1, 2, 3, 4, 6, 8, 12, 16, 24, 32],
-        "base_lin_vel": [1, 2, 3, 4, 6, 8, 12, 16, 24, 32],
-        "base_ang_vel": [1, 2, 3, 4, 6, 8, 12, 16, 24, 32],
+        "base_pos": [1, 2, 3, 4, 6, 8],
+        "base_quat": [1, 2, 3, 4, 6, 8],
+        "base_lin_vel": [1, 2, 3, 4, 6, 8],
+        "base_ang_vel": [1, 2, 3, 4, 6, 8],
         "base_ang_vel_local": [
             1,
         ],
@@ -328,8 +384,36 @@ EnvArgsRegistry["g1_motion_teacher"] = MotionEnvArgs(
         "link_ang_vel": [
             1,
         ],
-        "foot_contact": [1, 2, 3, 4, 6, 8, 12, 16, 24, 32],
+        "foot_contact": [1, 2, 3, 4, 6, 8],
     },
+    # observed_steps={
+    #     "base_pos": [1, 2, 3, 4],
+    #     "base_quat": [1, 2, 3, 4],
+    #     "base_lin_vel": [1, 2, 3, 4],
+    #     "base_ang_vel": [1, 2, 3, 4],
+    #     "base_ang_vel_local": [
+    #         1,
+    #     ],
+    #     "dof_pos": [
+    #         1,
+    #     ],
+    #     "dof_vel": [
+    #         1,
+    #     ],
+    #     "link_pos_local": [
+    #         1,
+    #     ],
+    #     "link_quat_local": [
+    #         1,
+    #     ],
+    #     "link_lin_vel": [
+    #         1,
+    #     ],
+    #     "link_ang_vel": [
+    #         1,
+    #     ],
+    #     "foot_contact": [1, 2, 3, 4],
+    # },
     motion_file=None,
 )
 
@@ -367,7 +451,7 @@ EnvArgsRegistry["g1_motion"] = MotionEnvArgs(
         "WaistVelPenalty": 0.2,
         "FeetSlidePenalty": 5.0,
         "MotionFeetAirTimePenalty": 100.0,
-        "FeetContactForceLimitPenalty": 1.0,
+        "FeetContactForceLimitPenalty": 2.0,
     },
     img_resolution=(480, 270),
     action_latency=1,
