@@ -461,6 +461,9 @@ class G1Retargeter:
         self.motion_quat_inv = torch.tensor([1.0, 0.0, 0.0, 0.0]).repeat(6, 1)
         self.global_yaw_inv = torch.tensor([1.0, 0.0, 0.0, 0.0])
         self.global_xy = torch.tensor([0.0, 0.0])
+        z_90_inv = quat_from_euler(torch.tensor([0.0, 0.0, -1.0]) * torch.pi / 2.0)
+        self.motion_quat_inv[self.base_idx] = z_90_inv
+        self.motion_quat_inv[self.torso_idx] = z_90_inv
         # Manual
         self.g1_shoulder_y = 0.100
         self.g1_arm_length = 0.419 * 0.9
