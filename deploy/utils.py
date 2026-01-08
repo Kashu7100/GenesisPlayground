@@ -528,7 +528,7 @@ class G1Retargeter:
         )
         return link_pos_local, link_quat_local
 
-    def _calibrate(
+    def calibrate(
         self,
         tracked_pos: torch.Tensor,
         tracked_quat: torch.Tensor,
@@ -576,7 +576,7 @@ class G1Retargeter:
         self, tracked_pos: torch.Tensor, tracked_quat: torch.Tensor, frame_id: int
     ) -> dict[str, torch.Tensor]:
         if not self._calibrated:
-            self._calibrate(tracked_pos, tracked_quat)
+            self.calibrate(tracked_pos, tracked_quat)
 
         # Local re-orientation
         tracked_quat = self._reorient_quat(tracked_quat, list(range(6)))
@@ -706,3 +706,7 @@ class G1Retargeter:
             "link_lin_vel": self.ema_link_lin_vel,
             "link_ang_vel": self.ema_link_ang_vel,
         }
+
+    @property
+    def calibrated(self) -> bool:
+        return self._calibrated

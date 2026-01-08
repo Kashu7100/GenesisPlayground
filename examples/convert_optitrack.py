@@ -90,6 +90,13 @@ def optitrack_to_motion_data(
             frame_id = frame_ids[i]
             frame_foot_contact = optitrack_data["foot_contact"][i]  # (2,)
 
+            if i == 0 and not retargeter.calibrated:
+                retargeter.calibrate(
+                    tracked_pos=frame_tracked_pos,
+                    tracked_quat=frame_tracked_quat,
+                )
+                continue
+
             # Check if there are skipped frame IDs
             if prev_frame_id is not None and frame_id - prev_frame_id > 1:
                 # Frame IDs were skipped, use the latest valid retargeted value

@@ -642,35 +642,35 @@ class RedisMotionPublisher:
         }
 
         # Foot contact calibration/state (computed from raw 51-link positions)
-        self.foot_contact_thresh = 0.04
-        self._foot_ground_calibrated = False
-        self._foot_ground_z_left = 0.0
-        self._foot_ground_z_right = 0.0
-        self._l_foot_idx_51 = self._name_to_idx_51["LeftFoot"]
-        self._r_foot_idx_51 = self._name_to_idx_51["RightFoot"]
+        self._foot_contact_height_thresh = 0.04
+        self._foot_contact_velocity_thresh = 0.5
+        self._foot_initial_height = None
+        self._foot_indices_51 = [
+            self._name_to_idx_51["LeftFoot"],
+            self._name_to_idx_51["RightFoot"],
+        ]
+        self._foot_last_pos = torch.zeros((2, 3), dtype=torch.float32)
 
     def publish(self, key: str, value: torch.Tensor, frame_id: int) -> None:
         self._redis.set(f"{self.key_prefix}:motion:{key}", json.dumps(_to_list(value)))
         self._redis.set(f"{self.key_prefix}:timestamp:{key}", frame_id)
 
-    def _ensure_foot_ground(self, all_link_pos: torch.Tensor) -> None:
-        if self._foot_ground_calibrated:
-            return
-        self._foot_ground_z_left = all_link_pos[self._l_foot_idx_51, 2].item()
-        self._foot_ground_z_right = all_link_pos[self._r_foot_idx_51, 2].item()
-        self._foot_ground_calibrated = True
-
     def _get_foot_contact(self, all_link_pos: torch.Tensor) -> torch.Tensor:
-        self._ensure_foot_ground(all_link_pos)
-        lz = all_link_pos[self._l_foot_idx_51, 2].item()
-        rz = all_link_pos[self._r_foot_idx_51, 2].item()
-        l_contact = 1.0 - min(
-            max((lz - self._foot_ground_z_left) / self.foot_contact_thresh, 0.0), 1.0
-        )
-        r_contact = 1.0 - min(
-            max((rz - self._foot_ground_z_right) / self.foot_contact_thresh, 0.0), 1.0
-        )
-        return torch.tensor([l_contact, r_contact], dtype=torch.float32)
+        foot_pos = all_link_pos[self._foot_indices_51, :]
+        if self._foot_initial_height is None:
+            self._foot_initial_height = foot_pos[:, 2]
+            self._foot_last_pos = foot_pos.clone()
+        foot_height = foot_pos[:, 2]
+        foot_not_contact_height = (
+            (foot_height - self._foot_initial_height) / self._foot_contact_height_thresh
+        ).clamp(0.0, 1.0)
+        foot_velocity = (foot_pos - self._foot_last_pos) * self.freq_hz
+        self._foot_last_pos = foot_pos.clone()
+        foot_not_contact_velocity = (
+            torch.norm(foot_velocity[..., :2], dim=-1) / self._foot_contact_velocity_thresh
+        ).clamp(0.0, 1.0)
+        foot_contact = 1 - (foot_not_contact_height + foot_not_contact_velocity).clamp(0.0, 1.0)
+        return foot_contact
 
     def close(self) -> None:
         self.receiver.shutdown()
@@ -690,9 +690,9 @@ class RedisMotionPublisher:
         getch()
 
         try:
+            next_publish_time = time.time() + 1.0 / self.freq_hz
             while True:
                 all_link_pos, all_link_quat, frame_id = self.receiver.get_links()
-                start_time = time.time()
 
                 tracked_pos = all_link_pos[self._tracked_indices_51, :]
                 tracked_quat = all_link_quat[self._tracked_indices_51, :]
@@ -704,6 +704,13 @@ class RedisMotionPublisher:
                     self.save_data["foot_contact"].append(foot_contact.detach().cpu())
                     self.save_data["frame_id"].append(frame_id)
 
+                if frame_id == 0 and not self.retargeter.calibrated:
+                    self.retargeter.calibrate(
+                        tracked_pos=tracked_pos,
+                        tracked_quat=tracked_quat,
+                    )
+                    continue
+
                 retargeted = self.retargeter.step(
                     tracked_pos=tracked_pos,
                     tracked_quat=tracked_quat,
@@ -713,9 +720,12 @@ class RedisMotionPublisher:
                 for k, v in retargeted.items():
                     self.publish(k, v, frame_id)
 
-                curr_time = time.time()
-                if curr_time - start_time < 1.0 / self.freq_hz:
-                    time.sleep(max(0.0, 1.0 / self.freq_hz - (curr_time - start_time)))
+                if time.time() >= next_publish_time:
+                    print("Optitrack is lagging behind")
+                    next_publish_time = time.time() + 1.0 / self.freq_hz
+                    continue
+                time.sleep(max(0.0, next_publish_time - time.time()))
+                next_publish_time += 1.0 / self.freq_hz
         except KeyboardInterrupt:
             print("\n[optitrack_publisher] Stopped by user.")
         finally:
