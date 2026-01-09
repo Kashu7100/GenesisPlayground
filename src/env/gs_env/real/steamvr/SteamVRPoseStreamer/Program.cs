@@ -65,15 +65,18 @@ namespace SteamVRPoseStreamer
                     rightIndex = vr.GetTrackedDeviceIndexForControllerRole(ETrackedControllerRole.RightHand);
                 }
 
-                // Get latest poses (Compositor must be available)
-                // WaitGetPoses blocks until the next pose set is ready
-                var comp = OpenVR.Compositor;
-                if (comp == null)
+                var system = OpenVR.System;
+                if (system == null)
                 {
-                    Console.WriteLine("OpenVR.Compositor is null. SteamVR compositor not available.");
+                    Console.WriteLine("OpenVR.System is null.");
                     break;
                 }
-                comp.WaitGetPoses(poses, null);
+                system.GetDeviceToAbsoluteTrackingPose(
+                    ETrackingUniverseOrigin.TrackingUniverseStanding,
+                    0f,
+                    poses
+                );
+
 
                 // HMD is always index 0
                 uint hmdIndex = OpenVR.k_unTrackedDeviceIndex_Hmd;
