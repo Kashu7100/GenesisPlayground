@@ -134,6 +134,8 @@ def optitrack_to_motion_data(
             link_pos = quat_apply(quat_yaw, retargeted["link_pos_local"].clone())
             link_pos[:, :2] += base_pos[None, :2]
             link_quat = quat_mul(quat_yaw, retargeted["link_quat_local"].clone())
+            link_pos = retargeted["link_pos_local"]
+            link_quat = retargeted["link_quat_local"]
             if show_viewer:
                 for link_name in env.scene.objects.keys():  # type: ignore
                     if link_name in link_name_to_idx:
@@ -192,9 +194,9 @@ def optitrack_to_motion_data(
 if __name__ == "__main__":
     show_viewer = True
 
-    # Find pickle files saved by optitrack_publisher.py in assets/OptiTrack
-    # pkl_files = list(Path("./assets/OptiTrack").glob("*.pkl"))
-    pkl_files = ["./assets/OptiTrack/walk_straight_0.pkl"]
+    # Find pickle files saved by optitrack_publisher.py in assets/optitrack
+    pkl_files = list(Path("./assets/optitrack").glob("*.pkl"))
+    # pkl_files = ["./assets/OptiTrack/walk_straight_0.pkl"]
 
     log_dir = Path("./assets/motion/optitrack")
     os.makedirs(log_dir, exist_ok=True)

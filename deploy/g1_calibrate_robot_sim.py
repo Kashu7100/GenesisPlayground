@@ -14,61 +14,18 @@ from g1_r2s_config import G1_CB1_LINK_NAMES, G1_CB2_LINK_NAMES, G1_FK_TABLES, G1
 from genesis.utils.geom import _tc_quat_to_R as torch_quat_to_R
 from genesis.utils.geom import _tc_R_to_quat as torch_R_to_quat
 from genesis.utils.geom import inv_quat, transform_by_quat
-from gs_env.common.utils.math_utils import transform_RT_by
+from gs_env.common.utils.math_utils import (
+    np_pose_mul,
+    pose_diff,
+    pose_inv,
+    pose_mul,
+    rot6d_to_rotmat,
+)
 from gs_env.sim.envs.config.registry import EnvArgsRegistry as sim_env_registry
 from gs_env.sim.envs.config.schema import LeggedRobotEnvArgs
 from gs_env.sim.envs.locomotion.custom_env import CustomEnv
 from gs_env.sim.robots.config.schema import HumanoidRobotArgs
 from tqdm import tqdm
-
-
-def torch_rot6d_to_rotmat(x: torch.Tensor) -> torch.Tensor:
-    """
-    Convert 6D rotation representation to rotation matrices.
-    """
-    a1 = x[..., 0:3]
-    a2 = x[..., 3:6]
-    b1 = torch.nn.functional.normalize(a1, dim=-1)
-    b2 = torch.nn.functional.normalize(a2 - (b1 * a2).sum(-1, keepdim=True) * b1, dim=-1)
-    b3 = torch.cross(b1, b2, dim=-1)
-    return torch.stack((b1, b2, b3), dim=-1)
-
-
-def torch_inverse_RT(R: torch.Tensor, T: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-    """
-    Inverse local transform (R, T)
-    R_inv = R^t
-    T_inv = -R^t * T
-    """
-    R_out = R.transpose(-1, -2)
-    T_out = -(R_out @ T.unsqueeze(-1)).squeeze(-1)
-    return R_out, T_out
-
-
-def torch_transform_RT_by(
-    R1: torch.Tensor, T1: torch.Tensor, R2: torch.Tensor, T2: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """
-    Apply local transform (R2, T2) in the frame of (R1, T1)
-    R = R1 * R2
-    T = R1 * T2 + T1
-    """
-    R_out = R1 @ R2
-    T_out = (R1 @ T2.unsqueeze(-1)).squeeze(-1) + T1
-    return R_out, T_out
-
-
-def torch_get_RT_between(
-    R1: torch.Tensor, T1: torch.Tensor, R2: torch.Tensor, T2: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """
-    Get local transform from (R1, T1) to (R2, T2)
-    R = R1^t * R2
-    T = R1^t * (T2 - T1)
-    """
-    R_out = R1.transpose(-1, -2) @ R2
-    T_out = (R1.transpose(-1, -2) @ (T2 - T1).unsqueeze(-1)).squeeze(-1)
-    return R_out, T_out
 
 
 def getch() -> str:
@@ -151,11 +108,11 @@ def main(args: argparse.Namespace) -> None:
             pos_tensor, quat_tensor = sim_env.get_link_pose(link_idx_local)
             pos = pos_tensor.cpu().numpy().astype(np.float32)
             quat = quat_tensor.cpu().numpy().astype(np.float32)
-            quat, pos = transform_RT_by(
-                quat,
+            quat, pos = np_pose_mul(
                 pos,
-                link_offsets[link_name]["quat"],
+                quat,
                 link_offsets[link_name]["pos"],
+                link_offsets[link_name]["quat"],
             )
             link_poses[link_name] = (pos, quat)
         qpos = noisy_qpos
@@ -265,7 +222,7 @@ def main(args: argparse.Namespace) -> None:
                 b_offset_R = acc_offset[b_link_name]["rot"]
                 b_offset_T = acc_offset[b_link_name]["pos"]
             else:
-                b_offset_R = torch_rot6d_to_rotmat(opt_offset[b_link_name]["rot"])
+                b_offset_R = rot6d_to_rotmat(opt_offset[b_link_name]["rot"])
                 b_offset_T = opt_offset[b_link_name]["pos"]
             b_offset_R = b_offset_R.unsqueeze(0).repeat(Samples, 1, 1)
             b_offset_T = b_offset_T.unsqueeze(0).repeat(Samples, 1)
@@ -273,35 +230,35 @@ def main(args: argparse.Namespace) -> None:
             if e_link_name in G1_CB1_LINK_NAMES:
                 raise ValueError("Calibrated links should not be as end links in FK chain.")
             else:
-                e_offset_R = torch_rot6d_to_rotmat(opt_offset[e_link_name]["rot"])
+                e_offset_R = rot6d_to_rotmat(opt_offset[e_link_name]["rot"])
                 e_offset_T = opt_offset[e_link_name]["pos"]
             e_offset_R = e_offset_R.unsqueeze(0).repeat(Samples, 1, 1)
             e_offset_T = e_offset_T.unsqueeze(0).repeat(Samples, 1)
 
-            fk_offset_R, fk_offset_T = torch_get_RT_between(
-                b_fk_rot,
+            fk_offset_R, fk_offset_T = pose_diff(
                 b_fk_pos,
-                e_fk_rot,
+                b_fk_rot,
                 e_fk_pos,
+                e_fk_rot,
             )  # FK local transform
-            b1_rot, b1_pos = torch_transform_RT_by(
-                b_mocap_rot,
+            b1_rot, b1_pos = pose_mul(
                 b_mocap_pos,
-                b_offset_R,
+                b_mocap_rot,
                 b_offset_T,
+                b_offset_R,
             )  # GT root link pose
-            e1_rot, e1_pos = torch_transform_RT_by(
-                b1_rot,
+            e1_rot, e1_pos = pose_mul(
                 b1_pos,
-                fk_offset_R,
+                b1_rot,
                 fk_offset_T,
+                fk_offset_R,
             )  # GT end link pose
-            e_offset_R_inv, e_offset_T_inv = torch_inverse_RT(e_offset_R, e_offset_T)
-            e2_rot, e2_pos = torch_transform_RT_by(
-                e1_rot,
+            e_offset_R_inv, e_offset_T_inv = pose_inv(e_offset_T, e_offset_R)
+            e2_rot, e2_pos = pose_mul(
                 e1_pos,
-                e_offset_R_inv,
+                e1_rot,
                 e_offset_T_inv,
+                e_offset_R_inv,
             )  # expected mocap end link pose
 
             e2_quat = torch_R_to_quat(e2_rot)  # Samples x 4
@@ -333,7 +290,7 @@ def main(args: argparse.Namespace) -> None:
     for name in G1_CB2_LINK_NAMES:
         rot6d = opt_offset[name]["rot"].detach().cpu().numpy()
         rotmat = (
-            torch_rot6d_to_rotmat(torch.tensor(rot6d, dtype=torch.float32).unsqueeze(0))
+            rot6d_to_rotmat(torch.tensor(rot6d, dtype=torch.float32).unsqueeze(0))
             .squeeze(0)
             .numpy()
         )

@@ -215,9 +215,9 @@ class RedisMotionPublisher:
                 foot_contact = self._get_foot_contact(all_link_pos)
 
                 if self.save:
-                    self.save_data["pos"].append(tracked_pos.detach().cpu())
-                    self.save_data["quat"].append(tracked_quat.detach().cpu())
-                    self.save_data["foot_contact"].append(foot_contact.detach().cpu())
+                    self.save_data["pos"].append(tracked_pos.detach().cpu().clone())
+                    self.save_data["quat"].append(tracked_quat.detach().cpu().clone())
+                    self.save_data["foot_contact"].append(foot_contact.detach().cpu().clone())
                     self.save_data["frame_id"].append(frame_id)
 
                 if not self.retargeter.calibrated:
