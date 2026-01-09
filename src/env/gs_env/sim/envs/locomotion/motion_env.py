@@ -834,6 +834,10 @@ class MotionEnv(LeggedRobotEnv):
             dof_vel=dof_vel,
         )
 
+    def update_motion_lib(self, motion_lib: MotionLib) -> None:
+        print("Warning: motion_lib is being replaced.")
+        self._motion_lib = motion_lib
+
     @property
     def motion_lib(self) -> MotionLib:
         return self._motion_lib

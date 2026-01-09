@@ -244,7 +244,7 @@ def evaluate_policy(
 
         link_name_to_idx: dict[str, int] = {}
         for link_name in env.scene.objects.keys():
-            link_name_to_idx[link_name] = env.robot.link_names.index(link_name)
+            link_name_to_idx[link_name] = env_args.tracking_link_names.index(link_name)
 
         while True:
             env.time_since_reset[0] = 0.0
@@ -271,8 +271,12 @@ def evaluate_policy(
                     torch.tensor([0, 0, 1], device=env.device, dtype=torch.float),
                 )
                 for link_name in env.scene.objects.keys():
-                    ref_link_pos = env.ref_link_pos_local_yaw[:, link_name_to_idx[link_name]]
-                    ref_link_quat = env.ref_link_quat_local_yaw[:, link_name_to_idx[link_name]]
+                    ref_link_pos = env.ref_tracking_link_pos_local_yaw[
+                        :, link_name_to_idx[link_name]
+                    ]
+                    ref_link_quat = env.ref_tracking_link_quat_local_yaw[
+                        :, link_name_to_idx[link_name]
+                    ]
                     ref_link_pos = quat_apply(ref_quat_yaw, ref_link_pos)
                     ref_link_pos[:, :2] += env.ref_base_pos[:, :2]
                     ref_link_quat = quat_mul(ref_quat_yaw, ref_link_quat)
