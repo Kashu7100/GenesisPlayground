@@ -447,8 +447,8 @@ class LeggedRobotBase(BaseGymRobot):
         self._external_torque[:, :, 2] -= 10.0
         self._external_torque = (
             torch.rand(self._num_envs, len(self._external_force_links_idx), 3, device=self._device)
-            * 10.0
-            - 5.0
+            * 2.0
+            - 1.0
         )
         zero_force = (
             torch.rand(self._num_envs, len(self._external_force_links_idx), device=self._device)
@@ -468,16 +468,16 @@ class LeggedRobotBase(BaseGymRobot):
         self._robot.solver.apply_links_external_force(
             force=self._external_force,
             links_idx=self._external_force_links_idx,
-            envs_idx=self._num_envs,
+            envs_idx=torch.arange(self._num_envs, device=self._device),
             ref="link_com",
-            local=True,
+            local=False,
         )
         self._robot.solver.apply_links_external_torque(
             torque=self._external_torque,
             links_idx=self._external_force_links_idx,
-            envs_idx=self._num_envs,
+            envs_idx=torch.arange(self._num_envs, device=self._device),
             ref="link_com",
-            local=True,
+            local=False,
         )
 
     def get_link_idx_local_by_name(self, name: str) -> int:
