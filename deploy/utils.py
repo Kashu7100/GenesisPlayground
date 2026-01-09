@@ -454,12 +454,11 @@ class G1Retargeter:
         self.g1_pelvis_torso_z = 0.837 - 0.793
         self.g1_pelvis_z = 0.793 * 0.95
         self.foot_offset_x = 0.06
-        self.l_g1_anchor = torch.tensor(
-            [0.0, self.g1_shoulder_y, self.g1_pelvis_shoulder_z],
-            dtype=torch.float32,
-        )
-        self.r_g1_anchor = torch.tensor(
-            [0.0, -self.g1_shoulder_y, self.g1_pelvis_shoulder_z],
+        self.g1_shoulder_anchor = torch.tensor(
+            [
+                [0.0, self.g1_shoulder_y, self.g1_pelvis_shoulder_z],
+                [0.0, -self.g1_shoulder_y, self.g1_pelvis_shoulder_z],
+            ],
             dtype=torch.float32,
         )
         # Calibrated
@@ -539,12 +538,11 @@ class G1Retargeter:
         aug_shoulder_z = (left_hand_pos[2].item() + right_hand_pos[2].item()) / 2.0
         self.aug_pelvis_z = tracked_pos[self.base_idx, 2].item()
         self.aug_pelvis_shoulder_z = aug_shoulder_z - self.aug_pelvis_z
-        self.l_aug_anchor = torch.tensor(
-            [0.0, self.aug_shoulder_y, self.aug_pelvis_shoulder_z],
-            dtype=torch.float32,
-        )
-        self.r_aug_anchor = torch.tensor(
-            [0.0, -self.aug_shoulder_y, self.aug_pelvis_shoulder_z],
+        self.aug_shoulder_anchor = torch.tensor(
+            [
+                [0.0, self.aug_shoulder_y, self.aug_pelvis_shoulder_z],
+                [0.0, -self.aug_shoulder_y, self.aug_pelvis_shoulder_z],
+            ],
             dtype=torch.float32,
         )
         self._calibrated = True
@@ -567,87 +565,67 @@ class G1Retargeter:
         tracked_pos, tracked_quat = self._apply_yaw_inv(
             tracked_pos, tracked_quat, self.global_yaw_inv
         )
-        # Arm scaling (use base frame + torso rotation)
-        l_hand_pos_local, l_hand_quat_local = pose_diff_quat(
-            tracked_pos[self.base_idx],
-            tracked_quat[self.torso_idx],
-            tracked_pos[self.l_hand_idx],
-            tracked_quat[self.l_hand_idx],
+        # EE scaling (arm use base frame + torso rotation)
+        _ee_idxs = [self.l_hand_idx, self.r_hand_idx, self.l_foot_idx, self.r_foot_idx]
+        _ee_base_pos_idxs = [self.base_idx] * 4
+        _ee_base_quat_idxs = [self.torso_idx] * 2 + [self.base_idx] * 2
+        p, q = pose_diff_quat(
+            tracked_pos[_ee_base_pos_idxs],
+            tracked_quat[_ee_base_quat_idxs],
+            tracked_pos[_ee_idxs],
+            tracked_quat[_ee_idxs],
         )
-        r_hand_pos_local, r_hand_quat_local = pose_diff_quat(
-            tracked_pos[self.base_idx],
-            tracked_quat[self.torso_idx],
-            tracked_pos[self.r_hand_idx],
-            tracked_quat[self.r_hand_idx],
-        )
-        l_hand_pos_local = self.l_g1_anchor + (l_hand_pos_local - self.l_aug_anchor) * (
+        hand_pos_local, hand_quat_local = p[0:2], q[0:2]
+        hand_pos_local = self.g1_shoulder_anchor + (hand_pos_local - self.aug_shoulder_anchor) * (
             self.g1_arm_length / self.aug_arm_length
         )
-        r_hand_pos_local = self.r_g1_anchor + (r_hand_pos_local - self.r_aug_anchor) * (
-            self.g1_arm_length / self.aug_arm_length
-        )
-        # Leg scaling
-        l_foot_pos_local, l_foot_quat_local = pose_diff_quat(
-            tracked_pos[self.base_idx],
-            tracked_quat[self.base_idx],
-            tracked_pos[self.l_foot_idx],
-            tracked_quat[self.l_foot_idx],
-        )
-        r_foot_pos_local, r_foot_quat_local = pose_diff_quat(
-            tracked_pos[self.base_idx],
-            tracked_quat[self.base_idx],
-            tracked_pos[self.r_foot_idx],
-            tracked_quat[self.r_foot_idx],
-        )
-        l_foot_pos_local = l_foot_pos_local * (self.g1_pelvis_z / self.aug_pelvis_z)
-        r_foot_pos_local = r_foot_pos_local * (self.g1_pelvis_z / self.aug_pelvis_z)
+        foot_pos_local, foot_quat_local = p[2:4], q[2:4]
+        foot_pos_local = foot_pos_local * (self.g1_pelvis_z / self.aug_pelvis_z)
         # Base scaling
         tracked_pos[self.base_idx] = tracked_pos[self.base_idx] * (
             self.g1_pelvis_z / self.aug_pelvis_z
         )
+        # Torso replacing
+        torso_pos_local = torch.tensor(
+            [[0.0, 0.0, self.g1_pelvis_torso_z]],
+            dtype=torch.float32,
+        )
+        _zero_quat = torch.tensor(
+            [[1.0, 0.0, 0.0, 0.0]],
+            dtype=torch.float32,
+        )
         # Update back
-        tracked_pos[self.l_foot_idx], tracked_quat[self.l_foot_idx] = pose_mul_quat(
-            tracked_pos[self.base_idx],
-            tracked_quat[self.base_idx],
-            l_foot_pos_local,
-            l_foot_quat_local,
-        )
-        tracked_pos[self.r_foot_idx], tracked_quat[self.r_foot_idx] = pose_mul_quat(
-            tracked_pos[self.base_idx],
-            tracked_quat[self.base_idx],
-            r_foot_pos_local,
-            r_foot_quat_local,
-        )
-        tracked_pos[self.torso_idx], _ = pose_mul_quat(  # Quat kept original
-            tracked_pos[self.base_idx],
-            tracked_quat[self.base_idx],
-            torch.tensor(
-                [0.0, 0.0, self.g1_pelvis_torso_z],
-                dtype=torch.float32,
+        p, q = pose_mul_quat(
+            tracked_pos[_ee_base_pos_idxs + [self.base_idx]],
+            tracked_quat[_ee_base_quat_idxs + [self.base_idx]],
+            torch.cat(
+                [
+                    hand_pos_local,
+                    foot_pos_local,
+                    torso_pos_local,
+                ],
+                dim=0,
             ),
-            quat_from_euler(torch.tensor([0.0, 0.0, 0.0])),
+            torch.cat(
+                [
+                    hand_quat_local,
+                    foot_quat_local,
+                    _zero_quat,
+                ],
+                dim=0,
+            ),
         )
-        tracked_pos[self.l_hand_idx], tracked_quat[self.l_hand_idx] = pose_mul_quat(
-            tracked_pos[self.base_idx],
-            tracked_quat[self.torso_idx],
-            l_hand_pos_local,
-            l_hand_quat_local,
-        )
-        tracked_pos[self.r_hand_idx], tracked_quat[self.r_hand_idx] = pose_mul_quat(
-            tracked_pos[self.base_idx],
-            tracked_quat[self.torso_idx],
-            r_hand_pos_local,
-            r_hand_quat_local,
-        )
+        tracked_pos[_ee_idxs] = p[:4]
+        tracked_quat[_ee_idxs] = q[:4]
+        # torso is articulated to base but kept rotation
+        tracked_pos[self.torso_idx] = p[4]
         # Foot move forward
-        tracked_pos[self.l_foot_idx] = tracked_pos[self.l_foot_idx] + quat_apply(
-            tracked_quat[self.l_foot_idx],
-            torch.tensor([self.foot_offset_x, 0.0, 0.0]),
+        p = tracked_pos[[self.l_foot_idx, self.r_foot_idx]] + quat_apply(
+            tracked_quat[[self.l_foot_idx, self.r_foot_idx]],
+            torch.tensor([self.foot_offset_x, 0.0, 0.0]).view(1, 3).repeat(2, 1),
         )
-        tracked_pos[self.r_foot_idx] = tracked_pos[self.r_foot_idx] + quat_apply(
-            tracked_quat[self.r_foot_idx],
-            torch.tensor([self.foot_offset_x, 0.0, 0.0]),
-        )
+        tracked_pos[self.l_foot_idx] = p[0]
+        tracked_pos[self.r_foot_idx] = p[1]
 
         # Localize
         tracked_pos_local, tracked_quat_local = self._localize(tracked_pos, tracked_quat)

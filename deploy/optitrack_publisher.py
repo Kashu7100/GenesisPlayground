@@ -163,7 +163,7 @@ class RedisMotionPublisher:
         self._name_to_idx_51 = {n: i for i, n in enumerate(self.receiver.link_names)}
         self._tracked_indices_51 = [self._name_to_idx_51[n] for n in self.tracked_link_names]
         self.save_data = {
-            "fps": 120,
+            "fps": int(self.freq_hz),
             "link_names": self.tracked_link_names,
             "pos": [],
             "quat": [],
