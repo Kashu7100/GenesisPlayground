@@ -17,15 +17,20 @@ class GenesisEnvWrapper(BaseEnvWrapper):
     ) -> None:
         super().__init__(env, device)
         self.env.reset()
-        self._curr_obs, _ = self.env.get_observations(obs_args=None)
+        self._obs_history_len = self.env.args.obs_history_len
+        self._obs_history = torch.zeros(
+            self.env.num_envs, self.env.actor_obs_dim, self._obs_history_len, device=device
+        )
 
     # ---------------------------
     # BatchEnvWrapper API (batch)
     # ---------------------------
-    def reset(self) -> tuple[torch.Tensor, dict[str, Any]]:
+    def reset(self) -> None:
         self.env.reset()
-        self._curr_obs, _ = self.env.get_observations(obs_args=None)
-        return self._curr_obs, self.env.get_extra_infos()
+
+    def reset_idx(self, envs_idx: torch.Tensor) -> None:
+        self.env.reset_idx(envs_idx)
+        self._obs_history[envs_idx] = 0.0
 
     def step(
         self, action: torch.Tensor
@@ -52,10 +57,12 @@ class GenesisEnvWrapper(BaseEnvWrapper):
         # reset if terminated or truncated
         done_idx = terminated.nonzero(as_tuple=True)[0]
         if len(done_idx) > 0:
-            self.env.reset_idx(done_idx)
+            self.reset_idx(done_idx)
         # get observations
         next_obs, _ = self.env.get_observations(obs_args=None)
-        return next_obs, reward, terminated, truncated, extra_infos
+        self._obs_history = torch.cat([self._obs_history[..., 1:], next_obs[..., None]], dim=-1)
+        obs = self._obs_history.view(self.env.num_envs, -1)
+        return obs, reward, terminated, truncated, extra_infos
 
     def get_observations(self, obs_args: Any = None) -> tuple[torch.Tensor, torch.Tensor]:
         """Get observations. Returns both actor and critic observations.
@@ -67,7 +74,8 @@ class GenesisEnvWrapper(BaseEnvWrapper):
         Returns:
             Tuple of (actor_obs, critic_obs)
         """
-        return self.env.get_observations(obs_args=obs_args)
+        _, critic_obs = self.env.get_observations(obs_args=obs_args)
+        return self._obs_history.view(self.env.num_envs, -1), critic_obs
 
     @property
     def action_dim(self) -> int:
@@ -75,7 +83,7 @@ class GenesisEnvWrapper(BaseEnvWrapper):
 
     @property
     def actor_obs_dim(self) -> int:
-        return self.env.actor_obs_dim
+        return self.env.actor_obs_dim * self._obs_history_len
 
     @property
     def critic_obs_dim(self) -> int:

@@ -201,7 +201,7 @@ class MotionLib:
 
             # recompute local link transforms with yaw-only removal from base
             relative_link_pos_global = link_pos_global.clone()
-            relative_link_pos_global[:, :, :2] -= base_pos[:, None, :2]
+            relative_link_pos_global[:, :, :] -= base_pos[:, None, :]
             base_euler = quat_to_euler(base_quat)
             base_euler[:, :2] = 0.0
             batched_inv_quat_yaw = quat_from_euler(

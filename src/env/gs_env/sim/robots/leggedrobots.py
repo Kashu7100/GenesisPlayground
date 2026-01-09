@@ -118,6 +118,22 @@ class LeggedRobotBase(BaseGymRobot):
         self._added_mass = torch.zeros(self._num_envs, 1, device=self._device)
         self._com_displacement = torch.zeros(self._num_envs, 3, device=self._device)
 
+        #
+        if self._args.external_force_links_idx is not None:
+            self._external_force_links_idx = [
+                self._robot.get_link(name).idx for name in self._args.external_force_links_idx
+            ]
+        else:
+            self._external_force_links_idx = []
+        self._external_force = torch.zeros(
+            self._num_envs, len(self._external_force_links_idx), 3, device=self._device
+        )
+        self._external_torque = torch.zeros(
+            self._num_envs, len(self._external_force_links_idx), 3, device=self._device
+        )
+        self._steps_since_randomize_external_force = 0
+        self._steps_to_randomize_external_force = 800
+
         # default states
         self._default_pos = torch.tensor(
             self._args.morph_args.pos, dtype=torch.float32, device=self._device
@@ -154,7 +170,7 @@ class LeggedRobotBase(BaseGymRobot):
         self._logging = False
 
         self._steps_since_randomize_pds = 0
-        self._steps_to_randomize_pds = 10
+        self._steps_to_randomize_pds = 40
 
     def post_build_init(self, eval_mode: bool = False) -> None:
         self._mass = self._robot.get_mass()
@@ -179,7 +195,7 @@ class LeggedRobotBase(BaseGymRobot):
         self._torque_limits = self._robot.get_dofs_force_range(self._dofs_idx_local)[1]
         if self._args.dof_vel_limit is not None:
             dof_vel_limit = []
-            for dof_name in self.dof_names:
+            for dof_name in self._args.dof_names:
                 for key in self._args.dof_vel_limit.keys():
                     if key in dof_name:
                         dof_vel_limit.append(self._args.dof_vel_limit[key])
@@ -368,6 +384,12 @@ class LeggedRobotBase(BaseGymRobot):
         self._dof_pos[:] = self._robot.get_dofs_position(self._dofs_idx_local)
         self._dof_vel[:] = self._robot.get_dofs_velocity(self._dofs_idx_local)
 
+        self._steps_since_randomize_external_force += 1
+        if self._steps_since_randomize_external_force >= self._steps_to_randomize_external_force:
+            self._randomize_external_force()
+            self._steps_since_randomize_external_force = 0
+        self._apply_external_force()
+
         self._steps_since_randomize_pds += 1
         if self._steps_since_randomize_pds >= self._steps_to_randomize_pds:
             self._randomize_pds()
@@ -411,6 +433,52 @@ class LeggedRobotBase(BaseGymRobot):
         q_force = torch.clamp(q_force, -self._torque_limits, self._torque_limits)
         self._torque[:] = q_force
         self._robot.control_dofs_force(force=q_force, dofs_idx_local=self._dofs_idx_local)
+
+    def _randomize_external_force(self) -> None:
+        """
+        Randomize external force to the robot.
+        """
+        self._external_force = (
+            torch.rand(self._num_envs, len(self._external_force_links_idx), 3, device=self._device)
+            * 10.0
+            - 5.0
+        )
+        self._external_force[:, :, 2] *= 2
+        self._external_torque[:, :, 2] -= 10.0
+        self._external_torque = (
+            torch.rand(self._num_envs, len(self._external_force_links_idx), 3, device=self._device)
+            * 10.0
+            - 5.0
+        )
+        zero_force = (
+            torch.rand(self._num_envs, len(self._external_force_links_idx), device=self._device)
+            < 0.3
+        )
+        zero_torque = (
+            torch.rand(self._num_envs, len(self._external_force_links_idx), device=self._device)
+            < 0.3
+        )
+        self._external_force[zero_force] = 0.0
+        self._external_torque[zero_torque] = 0.0
+
+    def _apply_external_force(self) -> None:
+        """
+        Apply external force to the robot.
+        """
+        self._robot.solver.apply_links_external_force(
+            force=self._external_force,
+            links_idx=self._external_force_links_idx,
+            envs_idx=self._num_envs,
+            ref="link_com",
+            local=True,
+        )
+        self._robot.solver.apply_links_external_torque(
+            torque=self._external_torque,
+            links_idx=self._external_force_links_idx,
+            envs_idx=self._num_envs,
+            ref="link_com",
+            local=True,
+        )
 
     def get_link_idx_local_by_name(self, name: str) -> int:
         return self._robot.get_link(name).idx_local

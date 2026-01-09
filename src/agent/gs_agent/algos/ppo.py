@@ -256,7 +256,6 @@ class PPO(BaseAlgo):
 
         # Calculate value loss
         values = self._critic(critic_obs)
-
         if self.use_clipped_value_loss:
             clipped_values = target_values + (values - target_values).clamp(
                 -self.cfg.clip_ratio, self.cfg.clip_ratio
