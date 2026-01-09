@@ -548,7 +548,7 @@ class MotionEnv(LeggedRobotEnv):
         self.body_ang_vel[:] = self.link_ang_velocities[:, self._robot.body_link_idx]
 
         link_pos_local_yaw = self._robot.link_positions
-        link_pos_local_yaw[:, :, :2] -= self.base_pos[:, None, :2]
+        link_pos_local_yaw[:, :, :] -= self.base_pos[:, None, :]
         quat_yaw = quat_from_angle_axis(
             self.base_euler[:, 2], torch.tensor([0, 0, 1], device=self._device, dtype=torch.float)
         )
