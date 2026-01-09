@@ -447,9 +447,6 @@ class G1Retargeter:
         self.motion_quat_inv = torch.tensor([1.0, 0.0, 0.0, 0.0]).repeat(6, 1)
         self.global_yaw_inv = torch.tensor([1.0, 0.0, 0.0, 0.0])
         self.global_xy = torch.tensor([0.0, 0.0])
-        z_90_inv = quat_from_euler(torch.tensor([0.0, 0.0, -1.0]) * torch.pi / 2.0)
-        self.motion_quat_inv[self.base_idx] = z_90_inv
-        self.motion_quat_inv[self.torso_idx] = z_90_inv
         # Manual
         self.g1_shoulder_y = 0.100
         self.g1_arm_length = 0.419 * 0.9
@@ -523,18 +520,14 @@ class G1Retargeter:
         tracked_quat: torch.Tensor,
     ) -> None:
         ### Global
-        z_90 = quat_from_euler(torch.tensor([0.0, 0.0, 1.0]) * torch.pi / 2.0)
         base_quat = tracked_quat[self.base_idx]
         base_euler = quat_to_euler(base_quat)
         base_euler[0] = 0.0
         base_euler[1] = 0.0
         yaw = quat_from_euler(base_euler)
-        self.global_yaw_inv = quat_mul(z_90, quat_inv(yaw))
+        self.global_yaw_inv = quat_inv(yaw)
         self.global_xy = tracked_pos[self.base_idx, :2].clone()
         ### Local
-        tracked_quat = self._reorient_quat(
-            tracked_quat, [self.base_idx, self.torso_idx]
-        )  # Z-90 on Pelvis & Torso
         tracked_pos, tracked_quat = self._localize(tracked_pos, tracked_quat)
         ee_idxs_6 = [self.l_foot_idx, self.r_foot_idx, self.l_hand_idx, self.r_hand_idx]
         self.motion_quat_inv[ee_idxs_6] = quat_inv(tracked_quat[ee_idxs_6])

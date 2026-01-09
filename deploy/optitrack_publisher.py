@@ -8,6 +8,12 @@ from pathlib import Path
 
 import redis
 import torch
+from gs_env.common.utils.math_utils import (
+    quat_apply,
+    quat_from_euler,
+    quat_inv,
+    quat_mul,
+)
 from gs_env.real.config.registry import EnvArgsRegistry
 from gs_env.real.config.schema import OptitrackEnvArgs
 from gs_env.real.optitrack.NatNetClient import setup_optitrack
@@ -54,6 +60,9 @@ class OptitrackReceiver:
         self.name_to_idx: dict[str, int] = {n: i for i, n in enumerate(self.SKELETON_ORDER)}
         self.link_names: list[str] = list(self.SKELETON_ORDER)
 
+        self.global_rot = quat_from_euler(torch.tensor([0.0, 0.0, 1.0]) * torch.pi / 2.0).view(1, 4)
+        self.global_rot_inv = quat_inv(self.global_rot)
+
     def start(self) -> None:
         self._client.run()
 
@@ -74,6 +83,8 @@ class OptitrackReceiver:
     ) -> tuple[torch.Tensor, torch.Tensor]:
         all_link_pos = torch.zeros((51, 3), dtype=torch.float32)
         all_link_quat = torch.zeros((51, 4), dtype=torch.float32)
+        global_rot = self.global_rot.repeat(51, 1)
+        global_rot_inv = self.global_rot_inv.repeat(51, 1)
         all_link_quat[:, 0] = 1.0
         for rb_id, (p, q) in frame.items():
             if rb_id not in RIGID_BODY_ID_MAP:
@@ -84,6 +95,9 @@ class OptitrackReceiver:
             idx = self.name_to_idx[name]
             all_link_pos[idx] = torch.tensor(p, dtype=torch.float32)
             all_link_quat[idx] = torch.roll(torch.tensor(q, dtype=torch.float32), 1)
+        # Axis conversion -y to +x, along z
+        all_link_pos = quat_apply(global_rot, all_link_pos)
+        all_link_quat = quat_mul(quat_mul(global_rot, all_link_quat), global_rot_inv)
 
         return all_link_pos, all_link_quat
 
