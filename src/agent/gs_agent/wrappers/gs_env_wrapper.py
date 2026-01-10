@@ -21,6 +21,7 @@ class GenesisEnvWrapper(BaseEnvWrapper):
         self._obs_history = torch.zeros(
             self.env.num_envs, self.env.actor_obs_dim, self._obs_history_len, device=device
         )
+        self._updated = torch.zeros(self.env.num_envs, dtype=torch.bool, device=device)
 
     # ---------------------------
     # BatchEnvWrapper API (batch)
@@ -31,6 +32,7 @@ class GenesisEnvWrapper(BaseEnvWrapper):
     def reset_idx(self, envs_idx: torch.Tensor) -> None:
         self.env.reset_idx(envs_idx)
         self._obs_history[envs_idx] = 0.0
+        self._updated[envs_idx] = 0.0
 
     def step(
         self, action: torch.Tensor
@@ -61,8 +63,7 @@ class GenesisEnvWrapper(BaseEnvWrapper):
         # get observations
         next_obs, _ = self.env.get_observations(obs_args=None)
         self._obs_history = torch.cat([self._obs_history[..., 1:], next_obs[..., None]], dim=-1)
-        obs = self._obs_history.view(self.env.num_envs, -1)
-        return obs, reward, terminated, truncated, extra_infos
+        return self.obs, reward, terminated, truncated, extra_infos
 
     def get_observations(self, obs_args: Any = None) -> tuple[torch.Tensor, torch.Tensor]:
         """Get observations. Returns both actor and critic observations.
@@ -74,8 +75,15 @@ class GenesisEnvWrapper(BaseEnvWrapper):
         Returns:
             Tuple of (actor_obs, critic_obs)
         """
-        _, critic_obs = self.env.get_observations(obs_args=obs_args)
-        return self._obs_history.view(self.env.num_envs, -1), critic_obs
+        actor_obs, critic_obs = self.env.get_observations(obs_args=obs_args)
+        not_updated = self._updated < 0.5
+        self._obs_history[not_updated, :, -1] = actor_obs[not_updated]
+        self._updated[not_updated] = 1.0
+        return self.obs, critic_obs
+
+    @property
+    def obs(self) -> torch.Tensor:
+        return self._obs_history.view(self.num_envs, -1).clone()
 
     @property
     def action_dim(self) -> int:

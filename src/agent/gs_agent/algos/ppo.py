@@ -118,11 +118,11 @@ class PPO(BaseAlgo):
 
     def _collect_rollouts(self, num_steps: int) -> dict[str, Any]:
         """Collect rollouts from the environment."""
-        actor_obs, critic_obs = self.env.get_observations()
-        termination_buffer = []
-        reward_terms_buffer = []
-        info_buffer = []
         with torch.inference_mode():
+            actor_obs, critic_obs = self.env.get_observations()
+            termination_buffer = []
+            reward_terms_buffer = []
+            info_buffer = []
             # collect rollouts and compute returns & advantages
             for _step in range(num_steps):
                 action, log_prob, mu, sigma = self._actor.forward_with_dist_params(actor_obs)
