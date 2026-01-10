@@ -258,9 +258,7 @@ def evaluate_policy(
                 motion_id,
             )
             env.hard_sync_motion(torch.IntTensor([0]))
-            obs, _ = (
-                wrapped_env.get_observations()
-            )  # Unpack actor and critic obs, use actor for policy
+            obs = wrapped_env.obs
             while (
                 env.motion_times[0]
                 < env.motion_lib.get_motion_length(torch.IntTensor([motion_id])) - 0.02
@@ -275,9 +273,8 @@ def evaluate_policy(
                 if terminated[0]:
                     env.hard_sync_motion(torch.IntTensor([0]))
                 env.update_history()
-                obs, _ = (
-                    wrapped_env.get_observations()
-                )  # Unpack actor and critic obs, use actor for policy
+                wrapped_env.update_obs_history()
+                obs = wrapped_env.obs
 
                 ref_quat_yaw = quat_from_angle_axis(
                     env.ref_base_euler[:, 2],
@@ -291,7 +288,7 @@ def evaluate_policy(
                         :, link_name_to_idx[link_name]
                     ]
                     ref_link_pos = quat_apply(ref_quat_yaw, ref_link_pos)
-                    ref_link_pos[:, :2] += env.ref_base_pos[:, :2]
+                    ref_link_pos += env.ref_base_pos
                     ref_link_quat = quat_mul(ref_quat_yaw, ref_link_quat)
                     env.scene.set_obj_pose(link_name, pos=ref_link_pos, quat=ref_link_quat)
                 env.scene.scene.clear_debug_objects()
@@ -307,7 +304,7 @@ def evaluate_policy(
                         :, foot_link_tracking_idx[i]
                     ]
                     foot_link_pos = quat_apply(ref_quat_yaw, foot_link_pos)
-                    foot_link_pos[:, :2] += env.ref_base_pos[:, :2]
+                    foot_link_pos += env.ref_base_pos
                     env.scene.scene.draw_debug_arrow(
                         foot_link_pos,
                         env.ref_foot_contact_weighted[0, i]

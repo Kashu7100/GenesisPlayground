@@ -250,7 +250,7 @@ def evaluate_policy(
             env.time_since_reset[0] = 0.0
             env.hard_reset_motion(torch.IntTensor([0]), motion_id)
             env.hard_sync_motion(torch.IntTensor([0]))
-            obs, _ = wrapped_env.get_observations()
+            obs = wrapped_env.obs
             while (
                 env.motion_times[0]
                 < env.motion_lib.get_motion_length(torch.IntTensor([motion_id])) - 0.02
@@ -261,10 +261,9 @@ def evaluate_policy(
                 terminated = env.get_terminated()
                 if terminated[0]:
                     env.hard_sync_motion(torch.IntTensor([0]))
-                env.update_buffers()
                 env.update_history()
-                env.get_reward()
-                obs, _ = wrapped_env.get_observations()
+                wrapped_env.update_obs_history()
+                obs = wrapped_env.obs
 
                 ref_quat_yaw = quat_from_angle_axis(
                     env.ref_base_euler[:, 2],
@@ -278,7 +277,7 @@ def evaluate_policy(
                         :, link_name_to_idx[link_name]
                     ]
                     ref_link_pos = quat_apply(ref_quat_yaw, ref_link_pos)
-                    ref_link_pos[:, :2] += env.ref_base_pos[:, :2]
+                    ref_link_pos += env.ref_base_pos
                     ref_link_quat = quat_mul(ref_quat_yaw, ref_link_quat)
                     env.scene.set_obj_pose(link_name, pos=ref_link_pos, quat=ref_link_quat)
 

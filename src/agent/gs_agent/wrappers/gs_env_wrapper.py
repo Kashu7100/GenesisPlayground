@@ -61,8 +61,7 @@ class GenesisEnvWrapper(BaseEnvWrapper):
         if len(done_idx) > 0:
             self.reset_idx(done_idx)
         # get observations
-        next_obs, _ = self.env.get_observations(obs_args=None)
-        self._obs_history = torch.cat([self._obs_history[..., 1:], next_obs[..., None]], dim=-1)
+        self.update_obs_history()
         return self.obs, reward, terminated, truncated, extra_infos
 
     def get_observations(self, obs_args: Any = None) -> tuple[torch.Tensor, torch.Tensor]:
@@ -80,6 +79,10 @@ class GenesisEnvWrapper(BaseEnvWrapper):
         self._obs_history[not_updated, :, -1] = actor_obs[not_updated]
         self._updated[not_updated] = 1.0
         return self.obs, critic_obs
+
+    def update_obs_history(self) -> None:
+        next_obs, _ = self.env.get_observations(obs_args=None)
+        self._obs_history = torch.cat([self._obs_history[..., 1:], next_obs[..., None]], dim=-1)
 
     @property
     def obs(self) -> torch.Tensor:
