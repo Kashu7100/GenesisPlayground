@@ -77,6 +77,7 @@ def optitrack_to_motion_data(
     def run() -> dict[str, Any] | None:
         nonlocal env, retargeter, motion_data, show_viewer
         last_update_time = time.time()
+        last_step_time = time.time()
         foot_links_idx = env.robot.foot_links_idx
 
         prev_frame_id: int | None = None
@@ -98,26 +99,33 @@ def optitrack_to_motion_data(
                 continue
 
             # Check if there are skipped frame IDs
-            if prev_frame_id is not None and frame_id - prev_frame_id > 1:
-                # Frame IDs were skipped, use the latest valid retargeted value
-                if last_valid_retargeted is not None:
-                    retargeted = last_valid_retargeted
-                    frame_id = prev_frame_id + 1
-                    i -= 1
-                else:
-                    continue
-            else:
-                # Retarget tracked links to robot-space base pose and link poses
-                retargeted = retargeter.step(
-                    tracked_pos=frame_tracked_pos,
-                    tracked_quat=frame_tracked_quat,
-                    frame_id=frame_id,
-                )
+            # if prev_frame_id is not None and frame_id - prev_frame_id > 1:
+            #     # Frame IDs were skipped, use the latest valid retargeted value
+            #     if last_valid_retargeted is not None:
+            #         retargeted = last_valid_retargeted
+            #         frame_id = prev_frame_id + 1
+            #         i -= 1
+            #     else:
+            #         continue
+            # else:
+            #     # Retarget tracked links to robot-space base pose and link poses
+            #     retargeted = retargeter.step(
+            #         tracked_pos=frame_tracked_pos,
+            #         tracked_quat=frame_tracked_quat,
+            #         frame_id=frame_id,
+            #     )
+            retargeted = retargeter.step(
+                tracked_pos=frame_tracked_pos,
+                tracked_quat=frame_tracked_quat,
+                frame_id=frame_id,
+            )
             i += 1
 
             # Store the last valid retargeted output
             last_valid_retargeted = retargeted
             prev_frame_id = frame_id
+            _ = last_valid_retargeted
+            _ = prev_frame_id
 
             # Extract retargeted base pose
             base_pos = retargeted["base_pos"].clone()  # (3,)
@@ -158,16 +166,17 @@ def optitrack_to_motion_data(
 
             foot_pos = link_pos[[0, 1], :]
             if show_viewer:
-                env.scene.scene.clear_debug_objects()
-                for j in range(len(foot_links_idx)):
-                    env.scene.scene.draw_debug_arrow(
-                        foot_pos[j],
-                        frame_foot_contact[j] * torch.tensor([0.0, 0.0, 0.5]),
-                        radius=0.01,
-                        color=(0.0, 0.0, 1.0),
-                    )
-
-                env.scene.scene.step()
+                if time.time() - last_step_time > 1 / 30:
+                    env.scene.scene.clear_debug_objects()
+                    for j in range(len(foot_links_idx)):
+                        env.scene.scene.draw_debug_arrow(
+                            foot_pos[j],
+                            frame_foot_contact[j] * torch.tensor([0.0, 0.0, 0.5]),
+                            radius=0.01,
+                            color=(0.0, 0.0, 1.0),
+                        )
+                    env.scene.scene.step()
+                    last_step_time = time.time()
                 while time.time() - last_update_time < 1 / motion_data["fps"]:
                     time.sleep(0.01)
                 last_update_time = time.time()

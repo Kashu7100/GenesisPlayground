@@ -371,6 +371,10 @@ RobotArgsRegistry["g1_default"] = HumanoidRobotArgs(
         "left_ankle_roll_link",
         "right_ankle_roll_link",
     ],
+    external_force_links_idx=[
+        "left_wrist_yaw_link",
+        "right_wrist_yaw_link",
+    ],
     show_target=True,
     dof_names=G1_dof_names,
     default_dof_pos=G1_default_dof_pos,

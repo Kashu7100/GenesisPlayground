@@ -132,11 +132,11 @@ class BC(BaseAlgo):
     def _collect_rollouts(self, num_steps: int) -> dict[str, Any]:
         """Collect rollouts."""
         assert self._teacher is not None, "Teacher network not built"
-        obs, _ = self.env.get_observations()  # Unpack actor and critic obs, only use actor
-        termination_buffer = []
-        reward_terms_buffer = []
-        info_buffer = []
         with torch.inference_mode():
+            obs, _ = self.env.get_observations()  # Unpack actor and critic obs, only use actor
+            termination_buffer = []
+            reward_terms_buffer = []
+            info_buffer = []
             # collect rollouts and compute returns & advantages
             for _step in range(num_steps):
                 student_actions = self._actor(obs)

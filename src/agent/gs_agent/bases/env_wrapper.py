@@ -14,7 +14,7 @@ class BaseEnvWrapper(ABC):
         self.device: Final[torch.device] = device
 
     @abstractmethod
-    def reset(self) -> tuple[torch.Tensor, dict[str, Any]]: ...
+    def reset(self) -> None: ...
 
     @abstractmethod
     def step(

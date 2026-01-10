@@ -92,6 +92,7 @@ class LeggedRobotArgs(BaseModel):
     ctrl_type: CtrlType
     body_link_name: str
     foot_link_names: list[str]
+    external_force_links_idx: list[str] | None = None
     show_target: bool
     dof_names: list[str]
     default_dof_pos: dict[str, float]
