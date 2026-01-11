@@ -14,9 +14,87 @@ namespace SteamVRPoseStreamer
         static readonly int RemotePort = 5005;
 
         // Target send rate
-        static readonly int TargetHz = 120;
+        static readonly int TargetHz = 60;
 
         static ulong frameId = 0;
+        
+        static readonly Dictionary<string, string> trackerSerialToRole = new()
+        {
+            { "LHR-1", "waist" },
+            { "LHR-2", "left_foot" },
+            { "LHR-3", "right_foot" },
+        };
+
+        static string? GetDeviceSerial(CVRSystem vr, uint deviceIndex)
+        {
+            if (vr == null) return null;
+
+            var err = ETrackedPropertyError.TrackedProp_Success;
+
+            uint needed = vr.GetStringTrackedDeviceProperty(
+                deviceIndex,
+                ETrackedDeviceProperty.Prop_SerialNumber_String,
+                null,
+                0,
+                ref err
+            );
+
+            if (needed <= 1 || err != ETrackedPropertyError.TrackedProp_Success)
+                return null;
+
+            var buf = new StringBuilder((int)needed);
+            vr.GetStringTrackedDeviceProperty(
+                deviceIndex,
+                ETrackedDeviceProperty.Prop_SerialNumber_String,
+                buf,
+                needed,
+                ref err
+            );
+
+            if (err != ETrackedPropertyError.TrackedProp_Success)
+                return null;
+
+            return buf.ToString();
+        }
+
+        static uint hmdIndex = OpenVR.k_unTrackedDeviceIndexInvalid;
+        static uint leftHandIndex = OpenVR.k_unTrackedDeviceIndexInvalid;
+        static uint rightHandIndex = OpenVR.k_unTrackedDeviceIndexInvalid;
+        static uint waistIndex = OpenVR.k_unTrackedDeviceIndexInvalid;
+        static uint leftFootIndex = OpenVR.k_unTrackedDeviceIndexInvalid;
+        static uint rightFootIndex = OpenVR.k_unTrackedDeviceIndexInvalid;
+
+        static void GetIndices(CVRSystem vr)
+        {
+            hmdIndex = OpenVR.k_unTrackedDeviceIndex_Hmd;
+            leftHandIndex = vr.GetTrackedDeviceIndexForControllerRole(ETrackedControllerRole.LeftHand);
+            rightHandIndex = vr.GetTrackedDeviceIndexForControllerRole(ETrackedControllerRole.RightHand);
+            waistIndex = OpenVR.k_unTrackedDeviceIndexInvalid;
+            leftFootIndex = OpenVR.k_unTrackedDeviceIndexInvalid;
+            rightFootIndex = OpenVR.k_unTrackedDeviceIndexInvalid;
+
+            for (uint i = 0; i < OpenVR.k_unMaxTrackedDeviceCount; i++)
+            {
+                if (vr.GetTrackedDeviceClass(i) != ETrackedDeviceClass.GenericTracker)
+                    continue;
+
+                var serial = GetDeviceSerial(vr, i);
+                if (serial == null) continue;
+
+                if (!trackerSerialToRole.TryGetValue(serial, out var role))
+                {
+                    Console.WriteLine($"[SteamVRPoseStreamer] Unmatched serial number: {serial}");
+                    continue;
+                }
+
+                switch (role)
+                {
+                    case "waist":  waistIndex = i; break;
+                    case "left_foot": leftFootIndex = i; break;
+                    case "right_foot": rightFootIndex = i; break;
+                }
+            }
+        }
 
         static void Main(string[] args)
         {
@@ -43,26 +121,13 @@ namespace SteamVRPoseStreamer
             var poses = new TrackedDevicePose_t[OpenVR.k_unMaxTrackedDeviceCount];
             int sleepMs = Math.Max(1, (int)Math.Round(1000.0 / TargetHz));
 
-            // Cache controller indices; they may change on reconnect, refresh periodically
-            uint leftIndex = OpenVR.k_unTrackedDeviceIndexInvalid;
-            uint rightIndex = OpenVR.k_unTrackedDeviceIndexInvalid;
-            int refreshCounter = 0;
-
             while (true)
             {
                 frameId++;
-                refreshCounter++;
 
-                // Occasionally refresh controller indices in case of reconnect
-                if (refreshCounter % (TargetHz * 2) == 0) // every ~2 seconds
+                if (frameId == 1)
                 {
-                    leftIndex = vr.GetTrackedDeviceIndexForControllerRole(ETrackedControllerRole.LeftHand);
-                    rightIndex = vr.GetTrackedDeviceIndexForControllerRole(ETrackedControllerRole.RightHand);
-                }
-                else if (frameId == 1)
-                {
-                    leftIndex = vr.GetTrackedDeviceIndexForControllerRole(ETrackedControllerRole.LeftHand);
-                    rightIndex = vr.GetTrackedDeviceIndexForControllerRole(ETrackedControllerRole.RightHand);
+                    GetIndices(vr);
                 }
 
                 var system = OpenVR.System;
@@ -77,32 +142,49 @@ namespace SteamVRPoseStreamer
                     poses
                 );
 
-
-                // HMD is always index 0
-                uint hmdIndex = OpenVR.k_unTrackedDeviceIndex_Hmd;
-
-                bool okH = TryGetPose(poses, hmdIndex, out var hp, out var hq);
-                bool okL = TryGetPose(poses, leftIndex, out var lp, out var lq);
-                bool okR = TryGetPose(poses, rightIndex, out var rp, out var rq);
+                bool okHMD = TryGetPose(poses, hmdIndex, out var HMDPose, out var HMDQuat);
+                bool okLeftHand = TryGetPose(poses, leftHandIndex, out var leftHandPose, out var leftHandQuat);
+                bool okRightHand = TryGetPose(poses, rightHandIndex, out var rightHandPose, out var rightHandQuat);
+                bool okWaist = TryGetPose(poses, waistIndex, out var waistPose, out var waistQuat);
+                bool okLeftFoot = TryGetPose(poses, leftFootIndex, out var leftFootPose, out var leftFootQuat);
+                bool okRightFoot = TryGetPose(poses, rightFootIndex, out var rightFootPose, out var rightFootQuat);
 
                 // bit0 primary, bit1 secondary, bit2 triggerButton, bit3 gripButton, bit4 primary2DAxisClick
-                int lb = TryGetButtonMask(vr, leftIndex);
-                int rb = TryGetButtonMask(vr, rightIndex);
+                int leftButton = TryGetButtonMask(vr, leftHandIndex);
+                int rightButton = TryGetButtonMask(vr, rightHandIndex);
 
-                if (!okH) { hp = (0, 0, 0); hq = (0, 0, 0, 1); }
-                if (!okL) { lp = (0, 0, 0); lq = (0, 0, 0, 1); }
-                if (!okR) { rp = (0, 0, 0); rq = (0, 0, 0, 1); }
+                if (!okHMD) { HMDPose = (0, 0, 0); HMDQuat = (0, 0, 0, 1); }
+                if (!okLeftHand) { leftHandPose = (0, 0, 0); leftHandQuat = (0, 0, 0, 1); }
+                if (!okRightHand) { rightHandPose = (0, 0, 0); rightHandQuat = (0, 0, 0, 1); }
+                if (!okWaist) { waistPose = (0, 0, 0); waistQuat = (0, 0, 0, 1); }
+                if (!okLeftFoot) { leftFootPose = (0, 0, 0); leftFootQuat = (0, 0, 0, 1); }
+                if (!okRightFoot) { rightFootPose = (0, 0, 0); rightFootQuat = (0, 0, 0, 1); }
 
                 // SteamVR/OpenVR uses a right-handed coordinate system.
 
                 string msg = string.Format(
                     System.Globalization.CultureInfo.InvariantCulture,
-                    "FRAME,{0},HPOSE,{1},{2},{3},{4},{5},{6},{7},LPOSE,{8},{9},{10},{11},{12},{13},{14},LB,{15},RPOSE,{16},{17},{18},{19},{20},{21},{22},RB,{23}",
+                    "FRAME,{0},HMD,{1},{2},{3},{4},{5},{6},{7},LEFTHAND,{8},{9},{10},{11},{12},{13},{14},LEFTBUTTON,{15},RIGHTHAND,{16},{17},{18},{19},{20},{21},{22},RIGHTBUTTON,{23},WAIST,{24},{25},{26},{27},{28},{29},{30},LEFTFOOT,{31},{32},{33},{34},{35},{36},{37},RIGHTFOOT,{38},{39},{40},{41},{42},{43},{44}",
                     frameId,
-                    hp.x, hp.y, hp.z, hq.x, hq.y, hq.z, hq.w,
-                    lp.x, lp.y, lp.z, lq.x, lq.y, lq.z, lq.w, lb,
-                    rp.x, rp.y, rp.z, rq.x, rq.y, rq.z, rq.w, rb
+                    HMDPose.x, HMDPose.y, HMDPose.z, HMDQuat.x, HMDQuat.y, HMDQuat.z, HMDQuat.w,
+                    leftHandPose.x, leftHandPose.y, leftHandPose.z, leftHandQuat.x, leftHandQuat.y, leftHandQuat.z, leftHandQuat.w,
+                    leftButton,
+                    rightHandPose.x, rightHandPose.y, rightHandPose.z, rightHandQuat.x, rightHandQuat.y, rightHandQuat.z, rightHandQuat.w,
+                    rightButton,
+                    waistPose.x, waistPose.y, waistPose.z, waistQuat.x, waistQuat.y, waistQuat.z, waistQuat.w,
+                    leftFootPose.x, leftFootPose.y, leftFootPose.z, leftFootQuat.x, leftFootQuat.y, leftFootQuat.z, leftFootQuat.w,
+                    rightFootPose.x, rightFootPose.y, rightFootPose.z, rightFootQuat.x, rightFootQuat.y, rightFootQuat.z, rightFootQuat.w
                 );
+
+                if (frameId == 1) {
+                    Console.WriteLine("[SteamVRPoseStreamer] Initial status:");
+                    Console.WriteLine($"    HMD:        {okHMD}");
+                    Console.WriteLine($"    LeftHand:   {okLeftHand}");
+                    Console.WriteLine($"    RightHand:  {okRightHand}");
+                    Console.WriteLine($"    Waist:      {okWaist}");
+                    Console.WriteLine($"    LeftFoot:   {okLeftFoot}");
+                    Console.WriteLine($"    RightFoot:  {okRightFoot}");
+                }
 
                 byte[] bytes = Encoding.UTF8.GetBytes(msg);
                 udp.Send(bytes, bytes.Length, remote);
