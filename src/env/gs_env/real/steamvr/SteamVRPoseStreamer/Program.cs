@@ -20,9 +20,9 @@ namespace SteamVRPoseStreamer
         
         static readonly Dictionary<string, string> trackerSerialToRole = new()
         {
-            { "LHR-1", "waist" },
-            { "LHR-2", "left_foot" },
-            { "LHR-3", "right_foot" },
+            { "58-A33S00451", "waist" },
+            { "58-A33S01984", "left_foot" },
+            { "58-A33S04570", "right_foot" },
         };
 
         static string? GetDeviceSerial(CVRSystem vr, uint deviceIndex)
@@ -39,7 +39,11 @@ namespace SteamVRPoseStreamer
                 ref err
             );
 
-            if (needed <= 1 || err != ETrackedPropertyError.TrackedProp_Success)
+            if (needed <= 1)
+                return null;
+
+            if (err != ETrackedPropertyError.TrackedProp_Success &&
+                err != ETrackedPropertyError.TrackedProp_BufferTooSmall)
                 return null;
 
             var buf = new StringBuilder((int)needed);
@@ -57,7 +61,7 @@ namespace SteamVRPoseStreamer
             return buf.ToString();
         }
 
-        static uint hmdIndex = OpenVR.k_unTrackedDeviceIndexInvalid;
+        static uint HMDIndex = OpenVR.k_unTrackedDeviceIndexInvalid;
         static uint leftHandIndex = OpenVR.k_unTrackedDeviceIndexInvalid;
         static uint rightHandIndex = OpenVR.k_unTrackedDeviceIndexInvalid;
         static uint waistIndex = OpenVR.k_unTrackedDeviceIndexInvalid;
@@ -66,7 +70,7 @@ namespace SteamVRPoseStreamer
 
         static void GetIndices(CVRSystem vr)
         {
-            hmdIndex = OpenVR.k_unTrackedDeviceIndex_Hmd;
+            HMDIndex = OpenVR.k_unTrackedDeviceIndex_Hmd;
             leftHandIndex = vr.GetTrackedDeviceIndexForControllerRole(ETrackedControllerRole.LeftHand);
             rightHandIndex = vr.GetTrackedDeviceIndexForControllerRole(ETrackedControllerRole.RightHand);
             waistIndex = OpenVR.k_unTrackedDeviceIndexInvalid;
@@ -142,7 +146,7 @@ namespace SteamVRPoseStreamer
                     poses
                 );
 
-                bool okHMD = TryGetPose(poses, hmdIndex, out var HMDPose, out var HMDQuat);
+                bool okHMD = TryGetPose(poses, HMDIndex, out var HMDPose, out var HMDQuat);
                 bool okLeftHand = TryGetPose(poses, leftHandIndex, out var leftHandPose, out var leftHandQuat);
                 bool okRightHand = TryGetPose(poses, rightHandIndex, out var rightHandPose, out var rightHandQuat);
                 bool okWaist = TryGetPose(poses, waistIndex, out var waistPose, out var waistQuat);
@@ -177,13 +181,20 @@ namespace SteamVRPoseStreamer
                 );
 
                 if (frameId == 1) {
-                    Console.WriteLine("[SteamVRPoseStreamer] Initial status:");
-                    Console.WriteLine($"    HMD:        {okHMD}");
-                    Console.WriteLine($"    LeftHand:   {okLeftHand}");
-                    Console.WriteLine($"    RightHand:  {okRightHand}");
-                    Console.WriteLine($"    Waist:      {okWaist}");
-                    Console.WriteLine($"    LeftFoot:   {okLeftFoot}");
-                    Console.WriteLine($"    RightFoot:  {okRightFoot}");
+                    var HMDConnect = (HMDIndex != OpenVR.k_unTrackedDeviceIndexInvalid);
+                    var leftHandConnect = (leftHandIndex != OpenVR.k_unTrackedDeviceIndexInvalid);
+                    var rightHandConnect = (rightHandIndex != OpenVR.k_unTrackedDeviceIndexInvalid);
+                    var waistConnect = (waistIndex != OpenVR.k_unTrackedDeviceIndexInvalid);
+                    var leftFootConnect = (leftFootIndex != OpenVR.k_unTrackedDeviceIndexInvalid);
+                    var rightFootConnect = (rightFootIndex != OpenVR.k_unTrackedDeviceIndexInvalid);
+                    Console.WriteLine( "[SteamVRPoseStreamer] Status:");
+                    Console.WriteLine( "                Connection\tPose");
+                    Console.WriteLine($"    HMD:        {HMDConnect}\t\t{okHMD}");
+                    Console.WriteLine($"    LeftHand:   {leftHandConnect}\t\t{okLeftHand}");
+                    Console.WriteLine($"    RightHand:  {rightHandConnect}\t\t{okRightHand}");
+                    Console.WriteLine($"    Waist:      {waistConnect}\t\t{okWaist}");
+                    Console.WriteLine($"    LeftFoot:   {leftFootConnect}\t\t{okLeftFoot}");
+                    Console.WriteLine($"    RightFoot:  {rightFootConnect}\t\t{okRightFoot}");
                 }
 
                 byte[] bytes = Encoding.UTF8.GetBytes(msg);
