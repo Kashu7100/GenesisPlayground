@@ -75,6 +75,8 @@ class GenesisEnvWrapper(BaseEnvWrapper):
             Tuple of (actor_obs, critic_obs)
         """
         actor_obs, critic_obs = self.env.get_observations(obs_args=obs_args)
+        if obs_args is not None:
+            return actor_obs, critic_obs
         not_updated = self._updated < 0.5
         self._obs_history[not_updated, :, -1] = actor_obs[not_updated]
         self._updated[not_updated] = 1.0
