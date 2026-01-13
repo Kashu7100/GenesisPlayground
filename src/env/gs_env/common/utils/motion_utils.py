@@ -46,7 +46,6 @@ class MotionLib:
         self._motion_files = []
         self._link_names = []
         self._dof_names = []
-        self._tracking_link_indices = None
 
         motion_weights = []
         motion_num_frames = []
@@ -80,24 +79,20 @@ class MotionLib:
                 print(f"Error loading motion file {curr_file}: {e}")
                 continue
 
-            if len(self._link_names) == 0:
-                self._link_names = motion_data["link_names"]
+            if len(self._dof_names) == 0:
                 self._dof_names = motion_data["dof_names"]
-                self._foot_link_indices = motion_data["foot_link_indices"]
 
-                # Filter to tracking links if specified
-                if self._tracking_link_names is not None:
-                    # Find indices of tracking links in the full link_names list
-                    tracking_link_indices = []
-                    for name in self._tracking_link_names:
-                        if name in self._link_names:
-                            tracking_link_indices.append(self._link_names.index(name))
-                        else:
-                            raise ValueError(
-                                f"Tracking link name '{name}' not found in motion data link names"
-                            )
-                    # Store the tracking link indices for filtering
-                    self._tracking_link_indices = tracking_link_indices
+            link_names = motion_data["link_names"]
+            tracking_link_indices = []
+            if self._tracking_link_names is None:
+                self._tracking_link_names = link_names
+            for name in self._tracking_link_names:
+                if name in link_names:
+                    tracking_link_indices.append(link_names.index(name))
+                else:
+                    raise ValueError(
+                        f"Tracking link name '{name}' not found in motion data link names"
+                    )
 
             base_pos = torch.tensor(motion_data["pos"], dtype=torch.float, device=self._device)
             base_quat = torch.tensor(motion_data["quat"], dtype=torch.float, device=self._device)
@@ -130,11 +125,8 @@ class MotionLib:
             link_quat_global = torch.tensor(
                 motion_data["link_quat"], dtype=torch.float, device=self._device
             )
-
-            # Filter to tracking links if specified
-            if self._tracking_link_indices is not None:
-                link_pos_global = link_pos_global[:, self._tracking_link_indices, :]
-                link_quat_global = link_quat_global[:, self._tracking_link_indices, :]
+            link_pos_global = link_pos_global[:, tracking_link_indices, :]
+            link_quat_global = link_quat_global[:, tracking_link_indices, :]
 
             foot_contact = torch.tensor(
                 motion_data["foot_contact"], dtype=torch.float, device=self._device
@@ -267,7 +259,6 @@ class MotionLib:
             motion_foot_contact.append(foot_contact)
             motion_foot_contact_weighted.append(foot_contact_weighted)
 
-        assert len(self._link_names) > 0, "Link names list is empty"
         assert len(self._dof_names) > 0, "Dof names list is empty"
 
         motion_weights = torch.tensor(motion_weights, dtype=torch.float, device=self._device)
@@ -499,9 +490,6 @@ class MotionLib:
             future_obs_dict[key] = gather(key)
         return curr_obs, future_obs_dict
 
-    def get_link_idx_local_by_name(self, name: str) -> int:
-        return self._link_names.index(name)
-
     def get_joint_idx_by_name(self, name: str) -> int:
         return self._dof_names.index(name)
 
@@ -539,10 +527,6 @@ class MotionLib:
     @property
     def dof_names(self) -> list[str]:
         return self._dof_names
-
-    @property
-    def foot_link_indices(self) -> list[int]:
-        return self._foot_link_indices
 
     @property
     def num_motions(self) -> int:
