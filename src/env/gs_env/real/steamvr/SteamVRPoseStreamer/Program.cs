@@ -14,7 +14,7 @@ namespace SteamVRPoseStreamer
         static readonly int RemotePort = 5005;
 
         // Target send rate
-        static readonly int TargetHz = 60;
+        static readonly int TargetHz = 120;
 
         static ulong frameId = 0;
         
