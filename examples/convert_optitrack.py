@@ -66,6 +66,7 @@ def optitrack_to_motion_data(
 
     num_frames = tracked_pos.shape[0]
     dof_dim = env.robot.dof_dim
+    _ = dof_dim
 
     pos_list = []
     quat_list = []
@@ -130,7 +131,7 @@ def optitrack_to_motion_data(
             # Extract retargeted base pose
             base_pos = retargeted["base_pos"].clone()  # (3,)
             base_quat = retargeted["base_quat"].clone()  # (4,)
-            dof_pos = torch.zeros(dof_dim, dtype=torch.float32)
+            dof_pos = retargeted["dof_pos"].clone()  # (29,)
             env.robot.set_state(
                 pos=base_pos.unsqueeze(0),
                 quat=base_quat.unsqueeze(0),
@@ -154,12 +155,10 @@ def optitrack_to_motion_data(
                             quat=link_quat[None, link_idx, :],
                         )
 
-            env.update_buffers()
-
             # Extract state from environment
             pos_list.append(retargeted["base_pos"].clone())
             quat_list.append(retargeted["base_quat"].clone())
-            dof_pos_list.append(env.dof_pos[0].clone())  # Store zeros as requested
+            dof_pos_list.append(dof_pos.clone())
             link_pos_list.append(link_pos.clone())
             link_quat_list.append(link_quat.clone())
             foot_contact_list.append(frame_foot_contact.clone())
@@ -201,11 +200,11 @@ def optitrack_to_motion_data(
 
 
 if __name__ == "__main__":
-    show_viewer = False
+    show_viewer = True
 
     # Find pickle files saved by optitrack_publisher.py in assets/optitrack
     pkl_files = list(Path("./assets/optitrack").glob("*.pkl"))
-    # pkl_files = ["./assets/OptiTrack/walk_straight_0.pkl"]
+    pkl_files = ["./assets/OptiTrack/walk_straight_0.pkl"]
 
     log_dir = Path("./assets/motion/optitrack")
     os.makedirs(log_dir, exist_ok=True)
@@ -227,7 +226,7 @@ if __name__ == "__main__":
 
     for pkl_file in pkl_files:
         # Create a new retargeter for each file to ensure clean calibration state
-        retargeter = G1Retargeter()
+        retargeter = G1Retargeter(joint_space_retarget=True)
         print(f"Processing {pkl_file}...")
         try:
             # Load OptiTrack data saved by optitrack_publisher.py

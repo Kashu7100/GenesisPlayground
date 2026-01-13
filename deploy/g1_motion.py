@@ -255,8 +255,13 @@ def main(
                     obs_gt = (ref_base_euler[0, 2] - env.base_euler[0, 2]).reshape(1, -1)
                 elif key == "diff_base_pos_local_yaw":
                     obs_gt = ref_base_lin_vel * 0.0
+                elif key == "diff_tracking_link_pos_local_yaw":
+                    obs_gt = env.diff_tracking_link_pos_local_yaw.reshape(1, -1)
+                elif key == "diff_tracking_link_rotation_6D":
+                    obs_gt = env.diff_tracking_link_rotation_6D.reshape(1, -1)
                 else:
                     obs_gt = getattr(env, key) * env_args.obs_scales.get(key, 1.0)
+                print(key, obs_gt.shape)
                 obs_components.append(obs_gt)
             obs_t = torch.cat(obs_components, dim=-1)
 

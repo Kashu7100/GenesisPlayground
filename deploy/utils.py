@@ -433,7 +433,7 @@ class G1Retargeter:
         "pelvis",
     )
 
-    def __init__(self) -> None:
+    def __init__(self, joint_space_retarget: bool = False) -> None:
         self.frame_rate = 120.0
 
         # Indices into the 6-link tensors (fixed order above)
@@ -452,7 +452,7 @@ class G1Retargeter:
         self.g1_arm_length = 0.419 * 0.9
         self.g1_pelvis_shoulder_z = 1.082 - 0.793
         self.g1_pelvis_torso_z = 0.837 - 0.793
-        self.g1_pelvis_z = 0.793 * 0.95
+        self.g1_pelvis_z = 0.793 * 0.98
         self.foot_offset_x = 0.06
         self.g1_shoulder_anchor = torch.tensor(
             [
@@ -480,6 +480,16 @@ class G1Retargeter:
         self.ema_base_ang_vel_local = torch.zeros(3)
         self.ema_link_lin_vel = torch.zeros(6, 3)
         self.ema_link_ang_vel = torch.zeros(6, 3)
+
+        self.joint_space_retarget = joint_space_retarget
+        if self.joint_space_retarget:
+            from GMR.general_motion_retargeting.motion_retarget import GeneralMotionRetargeting
+
+            self.joint_space_retargeter = GeneralMotionRetargeting(
+                src_human="optitrack",
+                tgt_robot="unitree_g1",
+                aligned_fps=60.0,
+            )
 
     def _ema(self, prev: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         a = self.vel_ema_alpha
@@ -626,6 +636,26 @@ class G1Retargeter:
         )
         tracked_pos[self.l_foot_idx] = p[0]
         tracked_pos[self.r_foot_idx] = p[1]
+        base_pos = tracked_pos[self.base_idx]
+        base_quat = tracked_quat[self.base_idx]
+
+        dof_pos = torch.zeros(29, device=tracked_pos.device)
+        if self.joint_space_retarget:
+            human_data = {}
+            for i, link_name in enumerate(self.LINK_ORDER):
+                link_pos = tracked_pos[i].detach().cpu().numpy()
+                link_quat = tracked_quat[i].detach().cpu().numpy()
+                human_data[link_name] = (link_pos, link_quat)
+            import time
+
+            start = time.time()
+            qpos = self.joint_space_retargeter.retarget(human_data)
+            end = time.time()
+            print(f"Time taken for retargeting: {end - start:.3f} seconds")
+            qpos_t = torch.from_numpy(qpos).to(tracked_pos.device).float()
+            base_pos = qpos_t[0:3]
+            base_quat = qpos_t[3:7]
+            dof_pos = qpos_t[7:]
 
         # Localize
         tracked_pos_local, tracked_quat_local = self._localize(tracked_pos, tracked_quat)
@@ -657,8 +687,8 @@ class G1Retargeter:
         self.prev_frame_id = frame_id
 
         return {
-            "base_pos": tracked_pos[self.base_idx],
-            "base_quat": tracked_quat[self.base_idx],
+            "base_pos": base_pos,
+            "base_quat": base_quat,
             "link_pos_local": tracked_pos_local,
             "link_quat_local": tracked_quat_local,
             "base_lin_vel": self.ema_base_lin_vel,
@@ -666,6 +696,7 @@ class G1Retargeter:
             "base_ang_vel_local": self.ema_base_ang_vel_local,
             "link_lin_vel": self.ema_link_lin_vel,
             "link_ang_vel": self.ema_link_ang_vel,
+            "dof_pos": dof_pos,
         }
 
     @property
