@@ -506,13 +506,18 @@ class G1Retargeter:
         link_quat_global = quat_mul(yaw_inv, quat)
         return link_pos_global, link_quat_global
 
-    def _localize(self, pos: torch.Tensor, quat: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def _localize(
+        self, pos: torch.Tensor, quat: torch.Tensor, keep_height: bool = True
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         link_pos_global = pos
         link_quat_global = quat
         base_pos = link_pos_global[self.base_idx, :]
         base_quat = link_quat_global[self.base_idx, :]
         relative_link_pos_global = link_pos_global.clone()
-        relative_link_pos_global[:, :2] -= base_pos[:2]
+        if keep_height:
+            relative_link_pos_global[:, :2] -= base_pos[:2]
+        else:
+            relative_link_pos_global -= base_pos
         base_euler = quat_to_euler(base_quat)
         base_euler[0] = 0.0
         base_euler[1] = 0.0
@@ -653,7 +658,9 @@ class G1Retargeter:
             dof_pos = qpos_t[7:]
 
         # Localize
-        tracked_pos_local, tracked_quat_local = self._localize(tracked_pos, tracked_quat)
+        tracked_pos_local, tracked_quat_local = self._localize(
+            tracked_pos, tracked_quat, keep_height=False
+        )
 
         if self.prev_frame_id != -1:
             df = frame_id - self.prev_frame_id

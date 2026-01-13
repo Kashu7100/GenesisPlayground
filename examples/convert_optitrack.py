@@ -55,9 +55,6 @@ def optitrack_to_motion_data(
     motion_data["fps"] = optitrack_data["fps"]
     motion_data["link_names"] = link_names
     motion_data["dof_names"] = dof_names
-    # save foot link indices and names for downstream usage
-    foot_links_idx = env.robot.foot_links_idx
-    motion_data["foot_link_indices"] = foot_links_idx
 
     # Extract data from optitrack pickle
     tracked_pos = optitrack_data["pos"]  # (num_frames, 6, 3)
@@ -141,10 +138,12 @@ def optitrack_to_motion_data(
                 quat_to_euler(base_quat)[2], torch.tensor([0.0, 0.0, 1.0])
             )
             link_pos = quat_apply(quat_yaw, retargeted["link_pos_local"].clone())
-            link_pos[:, :2] += base_pos[None, :2]
+            link_pos += base_pos[None]
             link_quat = quat_mul(quat_yaw, retargeted["link_quat_local"].clone())
             # link_pos = retargeted["link_pos_local"]
             # link_quat = retargeted["link_quat_local"]
+            base_pos = link_pos[link_name_to_idx["pelvis"], :]
+            base_quat = link_quat[link_name_to_idx["pelvis"], :]
             if show_viewer:
                 for link_name in env.scene.objects.keys():  # type: ignore
                     if link_name in link_name_to_idx:
@@ -204,7 +203,7 @@ if __name__ == "__main__":
 
     # Find pickle files saved by optitrack_publisher.py in assets/optitrack
     pkl_files = list(Path("./assets/optitrack").glob("*.pkl"))
-    # pkl_files = ["./assets/OptiTrack/walk_straight_0.pkl"]
+    # pkl_files = ["./assets/optitrack/walk_straight_0.pkl"]
 
     log_dir = Path("./assets/motion/optitrack")
     os.makedirs(log_dir, exist_ok=True)
