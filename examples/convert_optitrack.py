@@ -200,11 +200,11 @@ def optitrack_to_motion_data(
 
 
 if __name__ == "__main__":
-    show_viewer = True
+    show_viewer = False
 
     # Find pickle files saved by optitrack_publisher.py in assets/optitrack
     pkl_files = list(Path("./assets/optitrack").glob("*.pkl"))
-    pkl_files = ["./assets/OptiTrack/walk_straight_0.pkl"]
+    # pkl_files = ["./assets/OptiTrack/walk_straight_0.pkl"]
 
     log_dir = Path("./assets/motion/optitrack")
     os.makedirs(log_dir, exist_ok=True)

@@ -645,12 +645,8 @@ class G1Retargeter:
                 link_pos = tracked_pos[i].detach().cpu().numpy()
                 link_quat = tracked_quat[i].detach().cpu().numpy()
                 human_data[link_name] = (link_pos, link_quat)
-            import time
 
-            start = time.time()
             qpos = self.joint_space_retargeter.retarget(human_data)
-            end = time.time()
-            print(f"Time taken for retargeting: {end - start:.3f} seconds")
             qpos_t = torch.from_numpy(qpos).to(tracked_pos.device).float()
             base_pos = qpos_t[0:3]
             base_quat = qpos_t[3:7]

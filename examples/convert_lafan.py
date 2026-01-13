@@ -8,7 +8,6 @@ import gs_env.sim.envs as gs_envs
 import numpy as np
 import torch
 import yaml
-from gs_env.common.utils.math_utils import quat_to_euler
 from gs_env.sim.envs.config.registry import EnvArgsRegistry
 from gs_env.sim.envs.config.schema import MotionEnvArgs
 from gs_env.sim.scenes.config.registry import SceneArgsRegistry
@@ -63,22 +62,17 @@ def lafan_to_motion_data(
 
             # compute foot contact
             foot_pos = env.link_positions[0, foot_links_idx, :]
-            foot_quat = env.link_quaternions[0, foot_links_idx, :]
-            foot_euler = quat_to_euler(foot_quat)
-            foot_tilt = torch.clamp(
-                (torch.abs(foot_euler[:, 0]) + torch.abs(foot_euler[:, 1]) - 0.4) / 0.4, 0.0, 1.0
-            )
-            foot_lift = torch.clamp((foot_pos[:, 2] - 0.15) / 0.15, 0.0, 1.0)
+            foot_lift = torch.clamp((foot_pos[:, 2] - 0.2) / 0.2, 0.0, 1.0)
             if i == 0:
                 foot_last_pos = foot_pos.clone()
             foot_vel = torch.clamp(
-                (torch.norm((foot_pos[..., :2] - foot_last_pos[..., :2]) / env.dt, dim=-1) - 0.1)
-                / 0.1,
+                (torch.norm((foot_pos[..., :2] - foot_last_pos[..., :2]) / env.dt, dim=-1) - 0.2)
+                / 0.2,
                 0.0,
                 1.0,
             )
             foot_last_pos = foot_pos.clone()
-            foot_not_contact = ((foot_tilt + foot_lift + foot_vel) / 1.5).clamp(0.0, 1.0)
+            foot_not_contact = (foot_lift + foot_vel).clamp(0.0, 1.0)
             foot_contact = 1 - foot_not_contact
             foot_contact_list.append(foot_contact)
             if show_viewer:

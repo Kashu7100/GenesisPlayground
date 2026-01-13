@@ -41,6 +41,7 @@ def view_motion(env_args: Any) -> None:
                 env.update_buffers()
                 for link_name in env.scene.objects.keys():
                     link_pos = env.ref_tracking_link_pos_local_yaw[:, link_name_to_idx[link_name]]
+                    link_pos[:, 2] += env.base_pos[0, 2]
                     link_quat = env.ref_tracking_link_quat_local_yaw[:, link_name_to_idx[link_name]]
                     env.scene.set_obj_pose(link_name, pos=link_pos, quat=link_quat)
                 env.scene.scene.clear_debug_objects()
@@ -48,7 +49,7 @@ def view_motion(env_args: Any) -> None:
                     env.scene.scene.draw_debug_arrow(
                         env.link_positions[0, env.robot.foot_links_idx[i]],
                         env.ref_foot_contact_weighted[0, i]
-                        * torch.tensor([0.0, 0.0, 1.0], device=env.device),
+                        * torch.tensor([0.0, 0.0, 0.5], device=env.device),
                         radius=0.01,
                         color=(0.0, 0.0, 1.0),
                     )
