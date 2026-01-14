@@ -4,7 +4,14 @@ from pathlib import Path
 
 import fire
 import torch
-from gs_env.common.utils.math_utils import quat_apply, quat_from_angle_axis, quat_mul, quat_to_euler
+from gs_env.common.utils.math_utils import (
+    quat_apply,
+    quat_diff,
+    quat_from_angle_axis,
+    quat_mul,
+    quat_to_euler,
+    quat_to_rotation_6D,
+)
 from gs_env.common.utils.motion_utils import MotionLib, build_motion_obs_from_dict
 from gs_env.sim.envs.config.schema import MotionEnvArgs
 
@@ -66,7 +73,7 @@ def main(
     show_viewer: bool = True,
     sim: bool = True,
     action_scale: float = 0.0,  # only for real robot
-    motion_file: str | None = None,
+    motion_file: str = "./assets/motion/evaluate.pkl",
 ) -> None:
     """Run policy on either simulation or real robot.
 
@@ -83,6 +90,7 @@ def main(
 
     # Load checkpoint and env_args
     policy, env_args = load_checkpoint_and_env_args(exp_name, num_ckpt, device)
+    env_args = env_args.model_copy(update={"motion_file": motion_file})
 
     if sim:
         print("Running in SIMULATION mode")
@@ -110,9 +118,6 @@ def main(
         print("Press Start button to start the policy")
         while not env.robot.Start:
             time.sleep(0.1)
-
-    if motion_file is None:
-        motion_file = env_args.motion_file
 
     print("=" * 80)
     print("Starting policy execution")
@@ -146,11 +151,13 @@ def main(
         # Compute tracking_link_idx_local from tracking_link_names
         # Use motion_lib.link_names since it matches the robot structure
         tracking_link_names = env_args.tracking_link_names
-        link_names = motion_lib.link_names
+        link_names = motion_lib.tracking_link_names
         tracking_link_idx_local = (
             [link_names.index(name) for name in tracking_link_names] if tracking_link_names else []
         )
         envs_idx = torch.tensor([0], dtype=torch.long, device=device_t)
+
+        obs_history = None
 
         while True:
             # Check termination condition (only for real robot)
@@ -256,14 +263,24 @@ def main(
                 elif key == "diff_base_pos_local_yaw":
                     obs_gt = ref_base_lin_vel * 0.0
                 elif key == "diff_tracking_link_pos_local_yaw":
-                    obs_gt = env.diff_tracking_link_pos_local_yaw.reshape(1, -1)
+                    diff_pos = env.tracking_link_pos_local_yaw - ref_link_pos_local
+                    obs_gt = diff_pos.reshape(1, -1)
                 elif key == "diff_tracking_link_rotation_6D":
-                    obs_gt = env.diff_tracking_link_rotation_6D.reshape(1, -1)
+                    diff_quat = quat_diff(
+                        ref_link_quat_local,
+                        env.tracking_link_quat_local_yaw,
+                    )
+                    obs_gt = quat_to_rotation_6D(diff_quat).reshape(1, -1)
                 else:
                     obs_gt = getattr(env, key) * env_args.obs_scales.get(key, 1.0)
-                print(key, obs_gt.shape)
                 obs_components.append(obs_gt)
             obs_t = torch.cat(obs_components, dim=-1)
+            if obs_history is None:
+                obs_history = torch.zeros_like(obs_t.reshape(-1, 1)).repeat(
+                    1, env_args.obs_history_len
+                )
+            obs_history = torch.cat([obs_history[:, 1:], obs_t.reshape(-1, 1)], dim=1)
+            obs_t = obs_history.clone().reshape(1, -1)
 
             # Get action from policy
             with torch.no_grad():
@@ -279,6 +296,7 @@ def main(
                 terminated = env.get_terminated()  # type: ignore
                 if terminated[0]:
                     env.reset_idx(torch.IntTensor([0]))  # type: ignore
+                    obs_history = None
 
                 ref_quat_yaw = quat_from_angle_axis(
                     ref_base_euler[0, 2],
@@ -295,7 +313,7 @@ def main(
                             ref_link_pos = ref_link_pos_local[:, link_idx, :]
                             ref_link_quat = ref_link_quat_local[:, link_idx, :]
                             ref_link_pos = quat_apply(ref_quat_yaw, ref_link_pos)
-                            ref_link_pos[:, :2] += ref_base_pos[:, :2]
+                            ref_link_pos += ref_base_pos
                             ref_link_quat = quat_mul(ref_quat_yaw, ref_link_quat)
                             env.scene.set_obj_pose(link_name, pos=ref_link_pos, quat=ref_link_quat)  # type: ignore
                         else:
@@ -304,7 +322,7 @@ def main(
                             env.scene.scene.draw_debug_arrow(
                                 ref_link_pos,
                                 ref_foot_contact[0, 0]
-                                * torch.tensor([0.0, 0.0, 1.0], device=env.device),
+                                * torch.tensor([0.0, 0.0, 0.5], device=env.device),
                                 radius=0.01,
                                 color=(0.0, 0.0, 1.0),
                             )
@@ -312,7 +330,7 @@ def main(
                             env.scene.scene.draw_debug_arrow(
                                 ref_link_pos,
                                 ref_foot_contact[0, 1]
-                                * torch.tensor([0.0, 0.0, 1.0], device=env.device),
+                                * torch.tensor([0.0, 0.0, 0.5], device=env.device),
                                 radius=0.01,
                                 color=(0.0, 0.0, 1.0),
                             )

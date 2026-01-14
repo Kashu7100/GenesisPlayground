@@ -78,7 +78,7 @@ def publish_motion(
     # Pre-compute tracking link indices if names are provided
     link_indices: list[int] | None = None
     if tracking_link_names is not None and len(tracking_link_names) > 0:
-        name_to_idx = {name: i for i, name in enumerate(motion_lib.link_names)}
+        name_to_idx = {name: i for i, name in enumerate(motion_lib.tracking_link_names)}
         link_indices = []
         missing: list[str] = []
         for name in tracking_link_names:
@@ -107,7 +107,7 @@ def publish_motion(
     print(f"Motion id: {motion_id}")
     print(f"Publish rate: {1.0 / publish_dt:.2f} Hz")
     if link_indices is not None:
-        selected_names = [motion_lib.link_names[i] for i in link_indices]
+        selected_names = [motion_lib.tracking_link_names[i] for i in link_indices]
         print(f"Publishing {len(selected_names)} tracking links only: {selected_names}")
     print("=" * 80)
 

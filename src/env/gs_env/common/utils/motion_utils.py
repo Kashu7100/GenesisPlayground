@@ -44,7 +44,6 @@ class MotionLib:
     def _load_motions(self, motion_file: str) -> None:
         self._motion_names = []
         self._motion_files = []
-        self._link_names = []
         self._dof_names = []
 
         motion_weights = []
@@ -514,10 +513,6 @@ class MotionLib:
             padding="same",
         )
         return smoothed.squeeze(0).T
-
-    @property
-    def link_names(self) -> list[str]:
-        return self._link_names
 
     @property
     def tracking_link_names(self) -> list[str]:

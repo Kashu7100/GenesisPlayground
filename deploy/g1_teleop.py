@@ -4,7 +4,13 @@ from pathlib import Path
 
 import fire
 import torch
-from gs_env.common.utils.math_utils import quat_apply, quat_from_angle_axis, quat_mul
+from gs_env.common.utils.math_utils import (
+    quat_apply,
+    quat_diff,
+    quat_from_angle_axis,
+    quat_mul,
+    quat_to_rotation_6D,
+)
 from gs_env.common.utils.motion_utils import build_motion_obs_from_dict
 from gs_env.sim.envs.config.registry import EnvArgsRegistry
 from gs_env.sim.envs.config.schema import MotionEnvArgs
@@ -241,6 +247,8 @@ def main(
         redis_client.update()
         redis_client.update_quat(env.base_quat)
 
+        obs_history = None
+
         next_step_time = time.time() + 0.02
         start_step_time = time.time()
         while True:
@@ -295,10 +303,25 @@ def main(
                     )
                 elif key == "diff_base_pos_local_yaw":
                     obs_gt = redis_client.ref_base_lin_vel_local.reshape(1, -1)
+                elif key == "diff_tracking_link_pos_local_yaw":
+                    diff_pos = redis_client.link_pos_local_yaw - redis_client.link_pos_local_yaw
+                    obs_gt = diff_pos.reshape(1, -1)
+                elif key == "diff_tracking_link_rotation_6D":
+                    diff_quat = quat_diff(
+                        redis_client.link_quat_local_yaw,
+                        env.tracking_link_quat_local_yaw,
+                    )
+                    obs_gt = quat_to_rotation_6D(diff_quat).reshape(1, -1)
                 else:
                     obs_gt = getattr(env, key) * env_args.obs_scales.get(key, 1.0)
                 obs_components.append(obs_gt)
             obs_t = torch.cat(obs_components, dim=-1)
+            if obs_history is None:
+                obs_history = torch.zeros_like(obs_t.reshape(-1, 1)).repeat(
+                    1, env_args.obs_history_len
+                )
+            obs_history = torch.cat([obs_history[:, 1:], obs_t.reshape(-1, 1)], dim=1)
+            obs_t = obs_history.clone().reshape(1, -1)
 
             # Get action from policy
             assert policy is not None, "Policy must be loaded for deploy mode"
@@ -327,7 +350,7 @@ def main(
                             ref_link_pos = redis_client.link_pos_local_yaw[:, link_idx, :]
                             ref_link_quat = redis_client.link_quat_local_yaw[:, link_idx, :]
                             ref_link_pos = quat_apply(ref_quat_yaw, ref_link_pos)
-                            ref_link_pos[:, :2] += redis_client.ref_base_pos[:, :2]
+                            ref_link_pos += redis_client.ref_base_pos
                             ref_link_quat = quat_mul(ref_quat_yaw, ref_link_quat)
                             env.scene.set_obj_pose(link_name, pos=ref_link_pos, quat=ref_link_quat)  # type: ignore
 

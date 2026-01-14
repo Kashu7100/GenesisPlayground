@@ -1,10 +1,11 @@
+import mujoco
 import numpy as np
 import torch
 from gymnasium import spaces
 from transforms3d import quaternions
 
 from gs_env.common.bases.base_robot import BaseGymRobot
-from gs_env.common.utils.math_utils import quat_to_euler, quat_to_rotation_6D
+from gs_env.common.utils.math_utils import quat_from_euler, quat_to_euler, quat_to_rotation_6D
 from gs_env.real.unitree.utils.low_state_controller import LowStateCmdHandler
 from gs_env.real.unitree.utils.low_state_handler import LowStateMsgHandler
 from gs_env.sim.envs.config.schema import LeggedRobotEnvArgs
@@ -19,6 +20,7 @@ class UnitreeLeggedEnv(BaseGymRobot):
         action_scale: float = 0.0,
         interactive: bool = False,
         device: torch.device = _DEFAULT_DEVICE,
+        xml_path: str | None = None,
     ) -> None:
         super().__init__()
         self._args = args
@@ -29,6 +31,19 @@ class UnitreeLeggedEnv(BaseGymRobot):
         else:
             self._robot = LowStateMsgHandler(args.robot_args)
             self._robot.init()
+        self.real_time_fk = False
+        if xml_path is not None:
+            self.mj_model = mujoco.MjModel.from_xml_path(xml_path)
+            self.mj_data = mujoco.MjData(self.mj_model)
+            self.qpos_adr = np.zeros((len(args.robot_args.dof_names),), dtype=np.int32)
+            for i, joint_name in enumerate(args.robot_args.dof_names):
+                self.qpos_adr[i] = int(self.mj_model.joint(joint_name).qposadr)
+            self.tracking_link_idx = np.zeros((len(args.tracking_link_names),), dtype=np.int32)
+            for i, link_name in enumerate(args.tracking_link_names):
+                self.tracking_link_idx[i] = int(
+                    mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_BODY, link_name)
+                )
+            self.real_time_fk = True
         self._device = device
         self._action_space = spaces.Box(shape=(self.action_dim,), low=-np.inf, high=np.inf)
         self._action_scale = np.ones((self.action_dim,), dtype=np.float32)
@@ -153,6 +168,38 @@ class UnitreeLeggedEnv(BaseGymRobot):
     @property
     def base_ang_vel_local(self) -> torch.Tensor:
         return torch.tensor(self.robot.ang_vel, device=self._device, dtype=torch.float32)[None, :]
+
+    @property
+    def tracking_link_pos_local_yaw(self) -> torch.Tensor:
+        if not self.real_time_fk:
+            raise RuntimeError("Real-time FK is not enabled.")
+        self.mj_data.qpos[0:3] = 0.0
+        local_euler = self.base_euler.cpu().clone()
+        local_euler[:, 2] = 0.0
+        quat = quat_from_euler(local_euler)
+        self.mj_data.qpos[3:7] = quat.numpy()[0, [1, 2, 3, 0]]
+        self.mj_data.qpos[7:] = self.dof_pos.cpu().numpy()[0, self.qpos_adr]
+        mujoco.mj_forward(self.mj_model, self.mj_data)
+        tracking_link_pos_local_yaw = torch.tensor(
+            self.mj_data.xpos[self.tracking_link_idx], device=self._device, dtype=torch.float32
+        )[None, :]
+        return tracking_link_pos_local_yaw
+
+    @property
+    def tracking_link_quat_local_yaw(self) -> torch.Tensor:
+        if not self.real_time_fk:
+            raise RuntimeError("Real-time FK is not enabled.")
+        self.mj_data.qpos[0:3] = 0.0
+        local_euler = self.base_euler.cpu().clone()
+        local_euler[:, 2] = 0.0
+        quat = quat_from_euler(local_euler)
+        self.mj_data.qpos[3:7] = quat.numpy()[0, [1, 2, 3, 0]]
+        self.mj_data.qpos[7:] = self.dof_pos.cpu().numpy()[0, self.qpos_adr]
+        mujoco.mj_forward(self.mj_model, self.mj_data)
+        tracking_link_quat_local_yaw = torch.tensor(
+            self.mj_data.xquat[self.tracking_link_idx], device=self._device, dtype=torch.float32
+        )[None, [3, 0, 1, 2]]
+        return tracking_link_quat_local_yaw
 
     @property
     def device(self) -> torch.device:
