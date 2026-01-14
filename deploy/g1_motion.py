@@ -119,9 +119,10 @@ def main(
             xml_path="assets/robot/unitree_g1/g1_mocap_29dof.xml",
         )
 
-        print("Press Start button to start the policy")
-        while not env.robot.Start:
-            time.sleep(0.1)
+        # print("Press Start button to start the policy")
+        # while not env.robot.Start:
+        #     time.sleep(0.1)
+        input("press ENTER to proceed")
 
     print("=" * 80)
     print("Starting policy execution")
@@ -135,9 +136,9 @@ def main(
         # Initialize tracking variables
         last_action_t = torch.zeros(1, env.action_dim, device=device_t)
         commands_t = torch.zeros(1, 3, device=device_t)
-        last_update_time = time.time()
         total_inference_time = 0
         step_id = 0
+        action_scale = 0
 
         # Initialize motion library (direct file playback)
         motion_lib = MotionLib(motion_file=motion_file, device=device_t)
@@ -163,17 +164,17 @@ def main(
 
         obs_history = None
 
+        next_step_time = time.time() + 0.02
+        start_step_time = time.time()
         while True:
             # Check termination condition (only for real robot)
             if not sim and hasattr(env, "is_emergency_stop") and env.is_emergency_stop:  # type: ignore
                 print("Emergency stop triggered!")
                 break
 
-            # Control loop timing (50 Hz)
-            if time.time() - last_update_time < 0.02:
-                time.sleep(0.001)
-                continue
-            last_update_time = time.time()
+            if step_id < 50:
+                action_scale += 0.02
+                action_scale = min(action_scale, 1.0)
 
             if not sim:
                 commands_t[0, 0] = env.robot.Ly  # forward velocity (m/s)
@@ -293,7 +294,7 @@ def main(
                 end_time = time.time()
                 total_inference_time += end_time - start_time
 
-            env.apply_action(action_t)
+            env.apply_action(action_t * action_scale)
 
             if sim:
                 env.time_since_reset[0] = -1.0  # type: ignore
@@ -341,9 +342,18 @@ def main(
             last_action_t = action_t.clone()
             step_id += 1
 
-            if step_id % 100 == 0:
+            # Control loop timing (50 Hz)
+            if time.time() < next_step_time:
+                time.sleep(max(0, next_step_time - time.time()))
+                next_step_time = next_step_time + 0.02
+            else:
+                next_step_time = time.time() + 0.02
+
+            if step_id % 100 == 0 and step_id > 0:
                 print(f"Step {step_id}: Average inference time: {total_inference_time / 100:.4f}s")
+                print(f"Step {step_id}: FPS: {100 / (time.time() - start_step_time):.2f}")
                 total_inference_time = 0
+                start_step_time = time.time()
 
     try:
         deploy_loop()

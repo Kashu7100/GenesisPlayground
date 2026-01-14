@@ -141,9 +141,10 @@ def main(
             xml_path="assets/robot/unitree_g1/g1_mocap_29dof.xml",
         )
 
-        print("Press Start button to start the policy")
-        while not env.robot.Start:
-            time.sleep(0.1)
+        # print("Press Start button to start the policy")
+        # while not env.robot.Start:
+        #     time.sleep(0.1)
+        input("press ENTER to proceed")
 
     if view and sim:
         print("=" * 80)

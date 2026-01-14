@@ -2,11 +2,6 @@ import time
 
 import fire
 import torch
-from gs_env.common.utils.math_utils import (
-    quat_apply,
-    quat_from_angle_axis,
-    quat_mul,
-)
 from gs_env.real.leggedrobot_env import UnitreeLeggedEnv
 from gs_env.sim.envs.config.registry import EnvArgsRegistry
 from gs_env.sim.envs.config.schema import MotionEnvArgs
@@ -50,11 +45,11 @@ def main(
 
             tracking_link_pos = real_env.tracking_link_pos_local_yaw
             tracking_link_quat = real_env.tracking_link_quat_local_yaw
-            quat_yaw = quat_from_angle_axis(
-                real_env.base_euler[0, 2], torch.tensor([0, 0, 1], device=device, dtype=torch.float)
-            )
-            tracking_link_pos = quat_apply(quat_yaw, tracking_link_pos)
-            tracking_link_quat = quat_mul(quat_yaw, tracking_link_quat)
+            # quat_yaw = quat_from_angle_axis(
+            #     real_env.base_euler[0, 2], torch.tensor([0, 0, 1], device=device, dtype=torch.float)
+            # )
+            # tracking_link_pos = quat_apply(quat_yaw, tracking_link_pos)
+            # tracking_link_quat = quat_mul(quat_yaw, tracking_link_quat)
             for link_name in sim_env.scene.objects.keys():  # type: ignore
                 if link_name in env_args.tracking_link_names:
                     link_idx = env_args.tracking_link_names.index(link_name)
