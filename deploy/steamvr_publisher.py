@@ -8,6 +8,11 @@ from pathlib import Path
 
 import redis
 import torch
+from gs_env.common.utils.math_utils import (
+    quat_apply,
+    quat_mul,
+    rotmat_to_quat,
+)
 from gs_env.real.steamvr.SteamVRClient import SteamVRClient
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -30,8 +35,59 @@ def getch() -> str:
     return ch
 
 
+def _on_button(button_state: tuple[int, int], button: str) -> bool:
+    lb_map = {
+        "LX": 1 << 0,
+        "LY": 1 << 1,
+        "LTrigger": 1 << 2,
+        "LGrip": 1 << 3,
+        "LClick": 1 << 4,
+    }
+    rb_map = {
+        "RA": 1 << 0,
+        "RB": 1 << 1,
+        "RTrigger": 1 << 2,
+        "RGrip": 1 << 3,
+        "RClick": 1 << 4,
+    }
+    if button in lb_map:
+        return (button_state[0] & lb_map[button]) != 0
+    elif button in rb_map:
+        return (button_state[1] & rb_map[button]) != 0
+    else:
+        return False
+
+
 class SteamVRReceiver(SteamVRClient):
-    pass
+    def __init__(
+        self, udp_host: str = "0.0.0.0", udp_port: int = 5005, device: str = "cpu"
+    ) -> None:
+        super().__init__(udp_host, udp_port, device)
+
+        # x_t = -z_o, y_t = -x_o, z_t = y_o
+        # SteamVR uses right-handed Y-up coordinate system
+        # Target uses right-handed Z-up coordinate system
+        A = torch.tensor(
+            [[0.0, 0.0, -1.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            dtype=torch.float32,
+        )
+        self.global_rot = rotmat_to_quat(A).view(1, 4)
+        self.global_rot_inv = rotmat_to_quat(A.T).view(1, 4)
+        # x_t = z_o, y_t = -y_o, z_t = x_o
+        A = torch.tensor(
+            [[0.0, 0.0, 1.0], [0.0, -1.0, 0.0], [1.0, 0.0, 0.0]],
+            dtype=torch.float32,
+        )
+        self.base_local_rot = rotmat_to_quat(A)
+
+    def get_links(self) -> tuple[torch.Tensor, torch.Tensor, int]:
+        tracked_pos, tracked_quat, frame_id = super().get_links()
+        global_rot = self.global_rot.repeat(6, 1)
+        global_rot_inv = self.global_rot_inv.repeat(6, 1)
+        tracked_pos = quat_apply(global_rot, tracked_pos)
+        tracked_quat = quat_mul(quat_mul(global_rot, tracked_quat), global_rot_inv)
+        tracked_quat[5] = quat_mul(tracked_quat[5], self.base_local_rot)
+        return tracked_pos, tracked_quat, frame_id
 
 
 class RedisMotionPublisher:
@@ -124,8 +180,7 @@ class RedisMotionPublisher:
         self.receiver.start()
         self.receiver.get_links()
         print("[steamvr_publisher] Successfully received data from SteamVR server.")
-        print("[steamvr_publisher] Press any key to calibrate and start publishing...")
-        getch()
+        print("[steamvr_publisher] Press RT + B on controller to calibrate...")
 
         try:
             next_publish_time = time.time() + 1.0 / self.freq_hz
@@ -141,10 +196,13 @@ class RedisMotionPublisher:
                     self.save_data["frame_id"].append(frame_id)
 
                 if not self.retargeter.calibrated:
-                    self.retargeter.calibrate(
-                        tracked_pos=tracked_pos,
-                        tracked_quat=tracked_quat,
-                    )
+                    button_states = self.receiver.get_button_states()
+                    if _on_button(button_states, "RTrigger") and _on_button(button_states, "RB"):
+                        self.retargeter.calibrate(
+                            tracked_pos=tracked_pos,
+                            tracked_quat=tracked_quat,
+                        )
+                        print("[steamvr_publisher] Calibrated.")
                     continue
 
                 retargeted = self.retargeter.step(
