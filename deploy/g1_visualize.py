@@ -22,6 +22,7 @@ def main(
     device = torch.device(device)  # type: ignore[arg-type]
 
     env_args: MotionEnvArgs = EnvArgsRegistry["g1_motion"]  # type: ignore
+    env_args = env_args.model_copy(update={"motion_file": "assets/motion/evaluate.pkl"})
     sim_env = MotionEnv(args=env_args, num_envs=1, show_viewer=True, device=device)  # type: ignore[arg-type]
 
     env_args: MotionEnvArgs = EnvArgsRegistry["g1_motion"]  # type: ignore
@@ -56,11 +57,9 @@ def main(
             for link_name in sim_env.scene.objects.keys():  # type: ignore
                 if link_name in env_args.tracking_link_names:
                     link_idx = env_args.tracking_link_names.index(link_name)
-                    tracking_link_pos = tracking_link_pos[:, link_idx, :]
-                    tracking_link_quat = tracking_link_quat[:, link_idx, :]
-                    sim_env.scene.set_obj_pose(
-                        link_name, pos=tracking_link_pos, quat=tracking_link_quat
-                    )  # type: ignore
+                    link_pos = tracking_link_pos[:, link_idx, :]
+                    link_quat = tracking_link_quat[:, link_idx, :]
+                    sim_env.scene.set_obj_pose(link_name, pos=link_pos, quat=link_quat)  # type: ignore
 
             sim_env.step_visualizer()
 

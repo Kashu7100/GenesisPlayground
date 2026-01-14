@@ -178,7 +178,7 @@ class UnitreeLeggedEnv(BaseGymRobot):
         local_euler[:, 2] = 0.0
         quat = quat_from_euler(local_euler)
         self.mj_data.qpos[3:7] = quat.numpy()[0, [1, 2, 3, 0]]
-        self.mj_data.qpos[7:] = self.dof_pos.cpu().numpy()[0, self.qpos_adr]
+        self.mj_data.qpos[self.qpos_adr] = self.dof_pos.cpu().numpy()
         mujoco.mj_forward(self.mj_model, self.mj_data)
         tracking_link_pos_local_yaw = torch.tensor(
             self.mj_data.xpos[self.tracking_link_idx], device=self._device, dtype=torch.float32
@@ -194,11 +194,11 @@ class UnitreeLeggedEnv(BaseGymRobot):
         local_euler[:, 2] = 0.0
         quat = quat_from_euler(local_euler)
         self.mj_data.qpos[3:7] = quat.numpy()[0, [1, 2, 3, 0]]
-        self.mj_data.qpos[7:] = self.dof_pos.cpu().numpy()[0, self.qpos_adr]
+        self.mj_data.qpos[self.qpos_adr] = self.dof_pos.cpu().numpy()
         mujoco.mj_forward(self.mj_model, self.mj_data)
         tracking_link_quat_local_yaw = torch.tensor(
             self.mj_data.xquat[self.tracking_link_idx], device=self._device, dtype=torch.float32
-        )[None, [3, 0, 1, 2]]
+        )[None, :, [3, 0, 1, 2]]
         return tracking_link_quat_local_yaw
 
     @property
