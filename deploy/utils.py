@@ -80,7 +80,7 @@ class RedisClient:
         self.ref_dof_pos.zero_()
         self.ref_dof_vel.zero_()
         self.ref_base_pos.zero_()
-        self.ref_base_pos[0, 2] = 0.79
+        self.ref_base_pos[0, 2] = 0.76
         self.last_ref_base_pos.copy_(self.ref_base_pos)
         self.ref_base_quat.zero_()
         self.ref_base_quat[:, 0] = 1.0
@@ -94,12 +94,12 @@ class RedisClient:
         self.link_pos_local_yaw.zero_()
         self.link_pos_local_yaw = torch.tensor(
             [
-                [0.0, 0.1, 0.04],
-                [0.0, -0.1, 0.04],
-                [0.2, 0.2, 0.87],
-                [0.2, -0.2, 0.87],
-                [0.0, 0.0, 0.83],
-                [0.0, 0.0, 0.79],
+                [0.0, 0.13, -0.73],
+                [0.0, -0.13, -0.73],
+                [0.37, 0.1, 0.28],
+                [0.37, -0.1, 0.28],
+                [0.0, 0.0, 0.044],
+                [0.0, 0.0, 0.0],
             ],
             dtype=torch.float32,
             device=self._device,

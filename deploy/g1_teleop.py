@@ -302,9 +302,9 @@ def main(
                         1, -1
                     )
                 elif key == "diff_base_pos_local_yaw":
-                    obs_gt = redis_client.ref_base_lin_vel_local.reshape(1, -1)
+                    obs_gt = redis_client.ref_base_lin_vel_local.reshape(1, -1) * 0.0
                 elif key == "diff_tracking_link_pos_local_yaw":
-                    diff_pos = redis_client.link_pos_local_yaw - redis_client.link_pos_local_yaw
+                    diff_pos = env.tracking_link_pos_local_yaw - redis_client.link_pos_local_yaw
                     obs_gt = diff_pos.reshape(1, -1)
                 elif key == "diff_tracking_link_rotation_6D":
                     diff_quat = quat_diff(
