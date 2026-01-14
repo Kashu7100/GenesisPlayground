@@ -112,7 +112,11 @@ def main(
         from gs_env.real import UnitreeLeggedEnv
 
         env = UnitreeLeggedEnv(
-            env_args, action_scale=action_scale, interactive=True, device=device_t
+            env_args,
+            action_scale=action_scale,
+            interactive=True,
+            device=device_t,
+            xml_path="assets/robot/unitree_g1/g1_mocap_29dof.xml",
         )
 
         print("Press Start button to start the policy")
