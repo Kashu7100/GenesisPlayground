@@ -45,7 +45,8 @@ def main(
             sim_env.set_dof_pos(real_env.dof_pos[0])
             # sim_env.robot.set_state(quat=real_env.quat[0])
             link_idx_local = sim_env.get_link_idx_local_by_name("pelvis")
-            sim_env.set_link_pose(link_idx_local, quat=real_env.base_quat[0])
+            base_pos = torch.tensor([0.0, 0.0, 1.0])
+            sim_env.set_link_pose(link_idx_local, quat=real_env.base_quat[0], pos=base_pos)
 
             tracking_link_pos = real_env.tracking_link_pos_local_yaw
             tracking_link_quat = real_env.tracking_link_quat_local_yaw
@@ -58,6 +59,7 @@ def main(
                 if link_name in env_args.tracking_link_names:
                     link_idx = env_args.tracking_link_names.index(link_name)
                     link_pos = tracking_link_pos[:, link_idx, :]
+                    link_pos += base_pos
                     link_quat = tracking_link_quat[:, link_idx, :]
                     sim_env.scene.set_obj_pose(link_name, pos=link_pos, quat=link_quat)  # type: ignore
 
