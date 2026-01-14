@@ -307,7 +307,7 @@ def evaluate_policy(
                     foot_link_pos += env.ref_base_pos
                     env.scene.scene.draw_debug_arrow(
                         foot_link_pos,
-                        env.ref_foot_contact_weighted[0, i]
+                        env.ref_foot_contact[0, i]
                         * torch.tensor([0.0, 0.0, 0.5], device=env.device),
                         radius=0.01,
                         color=(0.0, 0.0, 1.0),
