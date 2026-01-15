@@ -453,8 +453,8 @@ class G1Retargeter:
         self.g1_arm_length = 0.419 * 0.9
         self.g1_pelvis_shoulder_z = 1.082 - 0.793
         self.g1_pelvis_torso_z = 0.837 - 0.793
-        self.g1_pelvis_z = 0.793 * 0.98
-        self.foot_offset_x = 0.06
+        self.g1_pelvis_z = 0.793 * 0.95
+        self.g1_leg_length = self.g1_pelvis_z - (0.793 - 0.7393)  # foot height
         self.g1_shoulder_anchor = torch.tensor(
             [
                 [0.0, self.g1_shoulder_y, self.g1_pelvis_shoulder_z],
@@ -462,10 +462,13 @@ class G1Retargeter:
             ],
             dtype=torch.float32,
         )
+        self.g1_leg_y = 0.1185
         # Calibrated
-        self.aug_arm_length = torch.tensor([self.g1_arm_length, self.g1_arm_length]) * 1.0
         self.aug_pelvis_z = self.g1_pelvis_z * 1.0
+        self.aug_arm_length = torch.tensor([self.g1_arm_length, self.g1_arm_length]) * 1.0
+        self.aug_leg_length = torch.tensor([self.g1_leg_length, self.g1_leg_length]) * 1.0
         self.aug_shoulder_anchor = self.g1_shoulder_anchor.clone()
+        self.foot_offset_xy = torch.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
 
         self.torso_quat_scale = 1.0
 
@@ -562,12 +565,22 @@ class G1Retargeter:
             ],
             dtype=torch.float32,
         )
+        left_leg_pos = tracked_pos[self.l_foot_idx] - tracked_pos[self.base_idx]
+        right_leg_pos = tracked_pos[self.r_foot_idx] - tracked_pos[self.base_idx]
+        self.aug_leg_length = torch.stack([-left_leg_pos[2], -right_leg_pos[2]])
+        left_leg_pos_scaled = left_leg_pos * (self.g1_leg_length / self.aug_leg_length[0])
+        right_leg_pos_scaled = right_leg_pos * (self.g1_leg_length / self.aug_leg_length[1])
+        self.foot_offset_xy[0, :2] = torch.tensor([0.0, self.g1_leg_y]) - left_leg_pos_scaled[:2]
+        self.foot_offset_xy[1, :2] = torch.tensor([0.0, -self.g1_leg_y]) - right_leg_pos_scaled[:2]
         self._calibrated = True
         print("Calibration result:")
         print(f"  - Pelvis Z: {self.aug_pelvis_z:.3f}")
         print(f"  - Arm Length (Mean): {self.aug_arm_length.mean().item():.3f}")
         print(f"  - Shoulder Y (Mean): {self.aug_shoulder_anchor[:, 1].abs().mean().item():.3f}")
-        print(f"  - Pelvis Shoulder Z (Mean): {(self.aug_shoulder_anchor[:, 2].mean().item()):.3f}")
+        print(f"  - Shoulder Z (Mean): {(self.aug_shoulder_anchor[:, 2].mean().item()):.3f}")
+        print(f"  - Leg Length (Mean): {self.aug_leg_length.mean().item():.3f}")
+        print(f"  - Foot X (Mean): {self.foot_offset_xy[:, 0].mean().item():.3f}")
+        print(f"  - Foot Y (Mean): {self.foot_offset_xy[:, 1].abs().mean().item():.3f}")
 
     def step(
         self, tracked_pos: torch.Tensor, tracked_quat: torch.Tensor, frame_id: int
@@ -597,7 +610,7 @@ class G1Retargeter:
             self.g1_arm_length / self.aug_arm_length.view(2, 1)
         )
         foot_pos_local, foot_quat_local = p[2:4], q[2:4]
-        foot_pos_local = foot_pos_local * (self.g1_pelvis_z / self.aug_pelvis_z)
+        foot_pos_local = foot_pos_local * (self.g1_leg_length / self.aug_leg_length.view(2, 1))
         # Base scaling
         tracked_pos[self.base_idx] = tracked_pos[self.base_idx] * (
             self.g1_pelvis_z / self.aug_pelvis_z
@@ -632,12 +645,14 @@ class G1Retargeter:
                 dim=0,
             ),
         )
-        tracked_pos[_ee_idxs + [self.torso_idx]] = p[:]
-        tracked_quat[_ee_idxs + [self.torso_idx]] = q[:]
-        # Foot move forward
+        tracked_pos[_ee_idxs] = p[:4]
+        tracked_quat[_ee_idxs] = q[:4]
+        # torso is articulated to base but kept rotation
+        tracked_pos[self.torso_idx] = p[4]
+        # Foot xy
         p = tracked_pos[[self.l_foot_idx, self.r_foot_idx]] + quat_apply(
             tracked_quat[[self.l_foot_idx, self.r_foot_idx]],
-            torch.tensor([self.foot_offset_x, 0.0, 0.0]).view(1, 3).repeat(2, 1),
+            self.foot_offset_xy,
         )
         tracked_pos[self.l_foot_idx] = p[0]
         tracked_pos[self.r_foot_idx] = p[1]
