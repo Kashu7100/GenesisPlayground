@@ -7,7 +7,6 @@ from gs_env.common.utils.math_utils import (
     pose_mul_quat,
     quat_apply,
     quat_diff,
-    quat_from_angle_axis,
     quat_from_euler,
     quat_inv,
     quat_mul,
@@ -445,10 +444,12 @@ class G1Retargeter:
         self.torso_idx = 4
         self.base_idx = 5
 
+        # Local rotation & global xy-plane transform
         self.motion_quat_inv = torch.tensor([1.0, 0.0, 0.0, 0.0]).repeat(6, 1)
         self.global_yaw_inv = torch.tensor([1.0, 0.0, 0.0, 0.0])
         self.global_xy = torch.tensor([0.0, 0.0])
-        # Manual
+
+        # G1 physical parameters
         self.g1_shoulder_y = 0.100
         self.g1_arm_length = 0.419 * 0.9
         self.g1_pelvis_shoulder_z = 1.082 - 0.793
@@ -463,17 +464,20 @@ class G1Retargeter:
             dtype=torch.float32,
         )
         self.g1_leg_y = 0.1185
-        # Calibrated
+
+        # Calibrated physical parameters
         self.aug_pelvis_z = self.g1_pelvis_z * 1.0
         self.aug_arm_length = torch.tensor([self.g1_arm_length, self.g1_arm_length]) * 1.0
         self.aug_leg_length = torch.tensor([self.g1_leg_length, self.g1_leg_length]) * 1.0
         self.aug_shoulder_anchor = self.g1_shoulder_anchor.clone()
         self.foot_offset_xy = torch.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
 
-        self.torso_quat_scale = 1.0
-
         self._calibrated = False
 
+        # Estimate torso orientation (vr approach only)
+        self.estimate_torso_quat = False
+
+        # Velocity
         self.vel_ema_alpha = 0.25
 
         self.prev_frame_id: int = -1
@@ -486,6 +490,7 @@ class G1Retargeter:
         self.ema_link_lin_vel = torch.zeros(6, 3)
         self.ema_link_ang_vel = torch.zeros(6, 3)
 
+        # GMR
         self.joint_space_retarget = joint_space_retarget
         if self.joint_space_retarget:
             from GMR.general_motion_retargeting.motion_retarget import GeneralMotionRetargeting
@@ -595,6 +600,19 @@ class G1Retargeter:
         tracked_pos, tracked_quat = self._apply_yaw_inv(
             tracked_pos, tracked_quat, self.global_yaw_inv
         )
+        # Torso quat estimation
+        if self.estimate_torso_quat:
+            p = quat_apply(
+                quat_inv(tracked_quat[self.base_idx]),
+                tracked_pos[self.torso_idx] - tracked_pos[self.base_idx],
+            )
+            d = p / (torch.linalg.norm(p) + 1e-6)
+            yaw = torch.tensor(0.0)
+            pitch = torch.atan2(d[0], d[2])
+            roll = -torch.atan2(d[1], torch.sqrt(d[0] ** 2 + d[2] ** 2))
+            # intrinsic ypr == extrinsic rpy
+            q = quat_from_euler(torch.stack([roll, pitch, yaw]))
+            tracked_quat[self.torso_idx] = quat_mul(tracked_quat[self.base_idx], q)
         # EE scaling (arm use base frame + torso rotation)
         _ee_idxs = [self.l_hand_idx, self.r_hand_idx, self.l_foot_idx, self.r_foot_idx]
         _ee_base_pos_idxs = [self.base_idx] * 4
@@ -621,11 +639,6 @@ class G1Retargeter:
             dtype=torch.float32,
         )
         torso_quat_local = q[4:5]
-        angle_axis = quat_to_angle_axis(torso_quat_local)
-        angle = angle_axis.norm()
-        torso_quat_local = quat_from_angle_axis(
-            angle * self.torso_quat_scale, angle_axis[0] / angle
-        )[None, :]
         # Update back
         p, q = pose_mul_quat(
             tracked_pos[_ee_base_pos_idxs + [self.base_idx]],

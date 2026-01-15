@@ -129,7 +129,7 @@ class RedisMotionPublisher:
             udp_port=udp_port,
         )
         self.retargeter = G1Retargeter()
-        self.retargeter.torso_quat_scale = 0.3
+        self.retargeter.estimate_torso_quat = True
 
         self.save_data = {
             "fps": int(self.freq_hz),
@@ -181,7 +181,7 @@ class RedisMotionPublisher:
         self.receiver.start()
         self.receiver.get_links()
         print("[steamvr_publisher] Successfully received data from SteamVR server.")
-        print("[steamvr_publisher] Press RT + B on controller to calibrate...")
+        print("[steamvr_publisher] Press RT + A on controller to calibrate...")
 
         try:
             next_publish_time = time.time() + 1.0 / self.freq_hz
@@ -198,7 +198,7 @@ class RedisMotionPublisher:
 
                 if not self.retargeter.calibrated:
                     button_states = self.receiver.get_button_states()
-                    if _on_button(button_states, "RTrigger") and _on_button(button_states, "RB"):
+                    if _on_button(button_states, "RTrigger") and _on_button(button_states, "RA"):
                         self.retargeter.calibrate(
                             tracked_pos=tracked_pos,
                             tracked_quat=tracked_quat,
