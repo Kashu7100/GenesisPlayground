@@ -36,6 +36,7 @@ class RedisClient:
         self.ref_base_pos = torch.zeros(1, 3, device=device)
         self.last_ref_base_pos = torch.zeros(1, 3, device=device)
         self.ref_base_quat = torch.zeros(1, 4, device=device)
+        self.raw_base_quat = torch.zeros(1, 4, device=device)
         self.last_ref_base_quat = torch.zeros(1, 4, device=device)
         self.ref_base_euler = torch.zeros(1, 3, device=device)
         self.ref_base_rotation_6D = torch.zeros(1, 6, device=device)
@@ -85,6 +86,8 @@ class RedisClient:
         self.last_ref_base_pos.copy_(self.ref_base_pos)
         self.ref_base_quat.zero_()
         self.ref_base_quat[:, 0] = 1.0
+        self.raw_base_quat.zero_()
+        self.raw_base_quat[:, 0] = 1.0
         self.last_ref_base_quat.copy_(self.ref_base_quat)
         self.ref_base_euler.zero_()
         self.ref_base_rotation_6D.zero_()
@@ -181,7 +184,7 @@ class RedisClient:
                     device=self._device,
                 ).view(1, 4)
                 self.ref_base_quat = quat_mul(self._yaw_diff_quat, base_quat)
-                # self.ref_base_quat = base_quat
+                self.raw_base_quat.copy_(base_quat)
                 self.base_quat_timestamp = new_timestamp
                 # Update derived quantities when quat changes
                 self.ref_base_euler = quat_to_euler(self.ref_base_quat)
@@ -195,10 +198,8 @@ class RedisClient:
                     dtype=torch.float32,
                     device=self._device,
                 ).view(1, 3)
-                # Apply yaw_diff_quat first (equivalent to base_yaw_offset_quat in motion_env)
-                base_lin_vel = quat_apply(self._yaw_diff_quat, base_lin_vel)
                 # Convert to local frame using ref_base_quat (equivalent to batched_global_to_local)
-                inv_quat = quat_inv(self.ref_base_quat)
+                inv_quat = quat_inv(self.raw_base_quat)
                 self.ref_base_lin_vel_local = quat_apply(inv_quat, base_lin_vel)
                 self.base_lin_vel_timestamp = new_timestamp
 
@@ -210,10 +211,8 @@ class RedisClient:
                     dtype=torch.float32,
                     device=self._device,
                 ).view(1, 3)
-                # Apply yaw_diff_quat first (equivalent to base_yaw_offset_quat in motion_env)
-                base_ang_vel = quat_apply(self._yaw_diff_quat, base_ang_vel)
                 # Convert to local frame using ref_base_quat (equivalent to batched_global_to_local)
-                inv_quat = quat_inv(self.ref_base_quat)
+                inv_quat = quat_inv(self.raw_base_quat)
                 self.ref_base_ang_vel_local = quat_apply(inv_quat, base_ang_vel)
                 self.base_ang_vel_timestamp = new_timestamp
 
