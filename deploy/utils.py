@@ -7,6 +7,7 @@ from gs_env.common.utils.math_utils import (
     pose_mul_quat,
     quat_apply,
     quat_diff,
+    quat_from_angle_axis,
     quat_from_euler,
     quat_inv,
     quat_mul,
@@ -466,6 +467,8 @@ class G1Retargeter:
         self.aug_pelvis_z = self.g1_pelvis_z * 1.0
         self.aug_shoulder_anchor = self.g1_shoulder_anchor.clone()
 
+        self.torso_quat_scale = 1.0
+
         self._calibrated = False
 
         self.vel_ema_alpha = 0.25
@@ -584,10 +587,10 @@ class G1Retargeter:
         _ee_base_pos_idxs = [self.base_idx] * 4
         _ee_base_quat_idxs = [self.torso_idx] * 2 + [self.base_idx] * 2
         p, q = pose_diff_quat(
-            tracked_pos[_ee_base_pos_idxs],
-            tracked_quat[_ee_base_quat_idxs],
-            tracked_pos[_ee_idxs],
-            tracked_quat[_ee_idxs],
+            tracked_pos[_ee_base_pos_idxs + [self.base_idx]],
+            tracked_quat[_ee_base_quat_idxs + [self.base_idx]],
+            tracked_pos[_ee_idxs + [self.torso_idx]],
+            tracked_quat[_ee_idxs + [self.torso_idx]],
         )
         hand_pos_local, hand_quat_local = p[0:2], q[0:2]
         hand_pos_local = self.g1_shoulder_anchor + (hand_pos_local - self.aug_shoulder_anchor) * (
@@ -604,9 +607,9 @@ class G1Retargeter:
             [[0.0, 0.0, self.g1_pelvis_torso_z]],
             dtype=torch.float32,
         )
-        _zero_quat = torch.tensor(
-            [[1.0, 0.0, 0.0, 0.0]],
-            dtype=torch.float32,
+        torso_quat_local = q[4:5]
+        torso_quat_local = quat_from_angle_axis(
+            quat_to_angle_axis(torso_quat_local) * self.torso_quat_scale
         )
         # Update back
         p, q = pose_mul_quat(
@@ -624,15 +627,13 @@ class G1Retargeter:
                 [
                     hand_quat_local,
                     foot_quat_local,
-                    _zero_quat,
+                    torso_quat_local,
                 ],
                 dim=0,
             ),
         )
-        tracked_pos[_ee_idxs] = p[:4]
-        tracked_quat[_ee_idxs] = q[:4]
-        # torso is articulated to base but kept rotation
-        tracked_pos[self.torso_idx] = p[4]
+        tracked_pos[_ee_idxs + [self.torso_idx]] = p[:]
+        tracked_quat[_ee_idxs + [self.torso_idx]] = q[:]
         # Foot move forward
         p = tracked_pos[[self.l_foot_idx, self.r_foot_idx]] + quat_apply(
             tracked_quat[[self.l_foot_idx, self.r_foot_idx]],
