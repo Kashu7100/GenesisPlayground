@@ -341,6 +341,9 @@ class RedisClient:
 
         # Apply yaw difference to current ref_base_quat
         self.ref_base_quat = quat_mul(self._yaw_diff_quat, self.ref_base_quat)
+        self.last_ref_base_quat = quat_mul(self._yaw_diff_quat, self.last_ref_base_quat)
+        self.ref_base_pos = quat_apply(self._yaw_diff_quat, self.ref_base_pos)
+        self.last_ref_base_pos = quat_apply(self._yaw_diff_quat, self.last_ref_base_pos)
 
         # Update derived quantities
         self.ref_base_euler = quat_to_euler(self.ref_base_quat)
