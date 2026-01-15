@@ -206,7 +206,7 @@ def main(
                         ref_link_pos = redis_client.link_pos_local_yaw[:, link_idx, :]
                         ref_link_quat = redis_client.link_quat_local_yaw[:, link_idx, :]
                         ref_link_pos = quat_apply(ref_quat_yaw, ref_link_pos)
-                        ref_link_pos[:, :2] += redis_client.ref_base_pos[:, :2]
+                        ref_link_pos += redis_client.ref_base_pos
                         ref_link_quat = quat_mul(ref_quat_yaw, ref_link_quat)
                         env.scene.set_obj_pose(link_name, pos=ref_link_pos, quat=ref_link_quat)  # type: ignore
                     else:
@@ -240,7 +240,6 @@ def main(
         nonlocal env, redis_client, tracking_link_names
         # Initialize tracking variables
         last_action_t = torch.zeros(1, env.action_dim, device=device)
-        commands_t = torch.zeros(1, 3, device=device)
         total_inference_time = 0
         step_id = 0
         action_scale = 0
@@ -265,16 +264,6 @@ def main(
                 action_scale += 0.02
                 action_scale = min(action_scale, 1.0)
 
-            if not sim:
-                commands_t[0, 0] = env.robot.Ly  # forward velocity (m/s)
-                commands_t[0, 1] = -env.robot.Lx  # lateral velocity (m/s)
-                commands_t[0, 2] = -env.robot.Rx  # angular velocity (rad/s)
-            else:
-                # Update commands (can be modified for different behaviors)
-                commands_t[0, 0] = 0.0  # forward velocity (m/s)
-                commands_t[0, 1] = 0.0  # lateral velocity (m/s)
-                commands_t[0, 2] = 0.0  # angular velocity (rad/s)
-
             # Update reference values from Redis (zeros if unavailable)
             redis_client.update()
 
@@ -283,12 +272,8 @@ def main(
             for key in env_args.actor_obs_terms:
                 if key == "last_action":
                     obs_gt = last_action_t
-                elif key == "commands":
-                    obs_gt = commands_t
                 elif key.startswith("ref_"):
-                    obs_gt = (
-                        getattr(redis_client, key) * env_args.obs_scales.get(key, 1.0)
-                    ).reshape(1, -1)
+                    obs_gt = getattr(redis_client, key).reshape(1, -1)
                 elif key == "motion_obs":
                     curr_dict = {
                         "base_pos": redis_client.last_ref_base_pos,
@@ -318,7 +303,8 @@ def main(
                     )
                     obs_gt = quat_to_rotation_6D(diff_quat).reshape(1, -1)
                 else:
-                    obs_gt = getattr(env, key) * env_args.obs_scales.get(key, 1.0)
+                    obs_gt = getattr(env, key)
+                obs_gt = obs_gt * env_args.obs_scales.get(key, 1.0)
                 obs_components.append(obs_gt)
             obs_t = torch.cat(obs_components, dim=-1)
             if obs_history is None:
