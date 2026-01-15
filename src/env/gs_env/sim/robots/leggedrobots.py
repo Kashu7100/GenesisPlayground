@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from genesis.engine.solvers.rigid.rigid_solver_decomp import RigidSolver
 
 from gs_env.common.bases.base_robot import BaseGymRobot
+from gs_env.common.utils.asset_utils import resolve_file_path
 from gs_env.common.utils.math_utils import quat_from_euler
 from gs_env.sim.robots.config.schema import (
     BaseAction,
@@ -46,7 +47,10 @@ class LeggedRobotBase(BaseGymRobot):
 
         # == Genesis configurations ==
         material = gs.materials.Rigid(**args.material_args.model_dump())
-        morph = gs.morphs.URDF(**args.morph_args.model_dump())
+        morph_args = args.morph_args.model_copy(
+            update={"file": resolve_file_path(args.morph_args.file)}
+        )
+        morph = gs.morphs.URDF(**morph_args.model_dump())
         self._robot: RigidEntity = scene.add_entity(  # type: ignore
             material=material,
             morph=morph,

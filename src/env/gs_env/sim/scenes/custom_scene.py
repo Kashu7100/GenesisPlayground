@@ -4,6 +4,7 @@ import genesis as gs
 import torch
 
 from gs_env.common.bases.base_scene import BaseSimScene
+from gs_env.common.utils.asset_utils import resolve_file_path
 from gs_env.common.utils.math_utils import quat_apply, quat_from_euler, quat_mul
 from gs_env.sim.scenes.config.schema import CustomSceneArgs
 from gs_env.sim.scenes.flat_scene import FlatScene
@@ -56,7 +57,7 @@ class CustomScene(FlatScene):
             if obj_type.lower() in ["obj", "stl", "ply"]:
                 obj = self._scene.add_entity(
                     gs.morphs.Mesh(
-                        file=object["path"],
+                        file=resolve_file_path(object["path"]),
                         scale=object.get("scale", 1.0),
                         pos=object["position"],
                         euler=object["orientation"],
@@ -69,7 +70,7 @@ class CustomScene(FlatScene):
             elif obj_type.lower() == "urdf":
                 obj = self._scene.add_entity(
                     gs.morphs.URDF(
-                        file=object["path"],
+                        file=resolve_file_path(object["path"]),
                         pos=object["position"],
                         euler=object["orientation"],
                         fixed=object.get("fixed", True),

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from huggingface_hub import snapshot_download
 
 
@@ -38,3 +40,15 @@ def get_urdf_path(name: str, end_effector_name: str) -> str:
         return urdf_path
     else:
         raise ValueError(f"Unknown robot name: {name}")
+
+
+def resolve_file_path(file_path: str) -> str:
+    """Resolve file path, trying the original path first, then relative to GenesisPlayground root."""
+    path = Path(file_path)
+    if not path.exists():
+        current = Path(__file__).resolve()
+        while current.parent != current:
+            if (current / path).exists():
+                return str(current / file_path)
+            current = current.parent
+    return file_path
