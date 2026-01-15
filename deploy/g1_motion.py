@@ -135,7 +135,6 @@ def main(
 
         # Initialize tracking variables
         last_action_t = torch.zeros(1, env.action_dim, device=device_t)
-        commands_t = torch.zeros(1, 3, device=device_t)
         total_inference_time = 0
         step_id = 0
         action_scale = 0
@@ -176,16 +175,6 @@ def main(
                 action_scale += 0.02
                 action_scale = min(action_scale, 1.0)
 
-            if not sim:
-                commands_t[0, 0] = env.robot.Ly  # forward velocity (m/s)
-                commands_t[0, 1] = -env.robot.Lx  # lateral velocity (m/s)
-                commands_t[0, 2] = -env.robot.Rx  # angular velocity (rad/s)
-            else:
-                # Update commands (can be modified for different behaviors)
-                commands_t[0, 0] = 0.0  # forward velocity (m/s)
-                commands_t[0, 1] = 0.0  # lateral velocity (m/s)
-                commands_t[0, 2] = 0.0  # angular velocity (rad/s)
-
             # Advance motion time and compute reference frame (looping)
             t_val += 0.02
             if t_val > motion_lib.get_motion_length(motion_id_t):
@@ -221,8 +210,6 @@ def main(
             for key in env_args.actor_obs_terms:
                 if key == "last_action":
                     obs_gt = last_action_t
-                elif key == "commands":
-                    obs_gt = commands_t
                 elif key == "motion_obs":
                     # Build motion observation from motion library
                     if len(motion_obs_steps) > 0:
@@ -241,7 +228,6 @@ def main(
                         )
                     else:
                         obs_gt = torch.zeros(1, 0, device=device_t)
-                    obs_gt = obs_gt * env_args.obs_scales.get(key, 1.0)
                 elif key.startswith("ref_"):
                     if key == "ref_base_pos":
                         obs_gt = ref_base_pos
@@ -262,7 +248,6 @@ def main(
                     else:
                         # Fallback: try env if it exposes extra ref_* tensors
                         obs_gt = getattr(env, key)
-                    obs_gt = obs_gt * env_args.obs_scales.get(key, 1.0)
                 elif key == "diff_base_yaw":
                     obs_gt = (ref_base_euler[0, 2] - env.base_euler[0, 2]).reshape(1, -1)
                 elif key == "diff_base_pos_local_yaw":
@@ -277,7 +262,8 @@ def main(
                     )
                     obs_gt = quat_to_rotation_6D(diff_quat).reshape(1, -1)
                 else:
-                    obs_gt = getattr(env, key) * env_args.obs_scales.get(key, 1.0)
+                    obs_gt = getattr(env, key)
+                obs_gt = obs_gt * env_args.obs_scales.get(key, 1.0)
                 obs_components.append(obs_gt)
             obs_t = torch.cat(obs_components, dim=-1)
             if obs_history is None:
