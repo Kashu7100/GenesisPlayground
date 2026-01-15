@@ -129,6 +129,7 @@ class RedisMotionPublisher:
             udp_port=udp_port,
         )
         self.retargeter = G1Retargeter()
+        self.retargeter.torso_quat_scale = 0.3
 
         self.save_data = {
             "fps": int(self.freq_hz),
