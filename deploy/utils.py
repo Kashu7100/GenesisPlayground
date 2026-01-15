@@ -1,6 +1,5 @@
 import json
 
-import redis
 import torch
 from gs_env.common.utils.math_utils import (
     pose_diff_quat,
@@ -25,6 +24,8 @@ class RedisClient:
         device: str,
         num_tracking_links: int = 0,
     ) -> None:
+        import redis
+
         self._r = redis.from_url(url)
         self._key = key
         self._device = device
