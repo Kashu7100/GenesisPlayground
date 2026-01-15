@@ -97,6 +97,7 @@ class LowStateCmdHandler(LowStateMsgHandler):
         self.msc.ReleaseMode()
 
         self.full_initial_dof_pos = self.full_joint_pos.copy()
+        self.full_initial_dof_pos[-1] += self._right_wrist_offset
         self.initial_stage = 0.0
 
         self.init_low_cmd()
@@ -236,6 +237,8 @@ class LowStateCmdHandler(LowStateMsgHandler):
             self.low_cmd.motor_cmd[self.dof_index[i]].kp = self.kp[i]
             self.low_cmd.motor_cmd[self.dof_index[i]].kd = self.kd[i]
             self.low_cmd.motor_cmd[self.dof_index[i]].tau = 0
+        # TEMP
+        self.low_cmd.motor_cmd[self.dof_index[-1]].q += self._right_wrist_offset
 
     def LowCmdWrite(self) -> None:
         if self.L2 and self.R2:  # if both L2 and R2 are pressed, emergency stop
@@ -250,6 +253,7 @@ class LowStateCmdHandler(LowStateMsgHandler):
             )
             for i in range(self.num_full_dof):
                 self.low_cmd.motor_cmd[i].q = target_pos[i]
+            self.low_cmd.motor_cmd[self.dof_index[-1]].q += self._right_wrist_offset
             self.initial_stage += 0.001
         else:
             self.set_cmd()

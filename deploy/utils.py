@@ -621,9 +621,11 @@ class G1Retargeter:
             dtype=torch.float32,
         )
         torso_quat_local = q[4:5]
+        angle_axis = quat_to_angle_axis(torso_quat_local)
+        angle = angle_axis.norm()
         torso_quat_local = quat_from_angle_axis(
-            quat_to_angle_axis(torso_quat_local) * self.torso_quat_scale
-        )
+            angle * self.torso_quat_scale, angle_axis[0] / angle
+        )[None, :]
         # Update back
         p, q = pose_mul_quat(
             tracked_pos[_ee_base_pos_idxs + [self.base_idx]],
@@ -645,10 +647,8 @@ class G1Retargeter:
                 dim=0,
             ),
         )
-        tracked_pos[_ee_idxs] = p[:4]
-        tracked_quat[_ee_idxs] = q[:4]
-        # torso is articulated to base but kept rotation
-        tracked_pos[self.torso_idx] = p[4]
+        tracked_pos[_ee_idxs + [self.torso_idx]] = p[:]
+        tracked_quat[_ee_idxs + [self.torso_idx]] = q[:]
         # Foot xy
         p = tracked_pos[[self.l_foot_idx, self.r_foot_idx]] + quat_apply(
             tracked_quat[[self.l_foot_idx, self.r_foot_idx]],

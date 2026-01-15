@@ -167,6 +167,9 @@ class LowStateMsgHandler:
         # Create a thread for the main loop
         self.main_thread = threading.Thread(target=self.main_loop, daemon=True)
 
+        # TEMP
+        self._right_wrist_offset = -0.5
+
     def init(self) -> None:
         try:
             ChannelFactoryInitialize(0, "enx2c16dbaafd43")  # MANUAL SET NETWORK INTERFACE
@@ -236,6 +239,7 @@ class LowStateMsgHandler:
         for i in range(self.num_full_dof):
             self.full_joint_pos[i] = motor_state[i].q
         # print("low_state_big_flag", self.robot_low_state.bit_flag)
+        self.full_joint_pos[-1] = motor_state[-1].q - self._right_wrist_offset
 
     def parse_botton(self, data1: int, data2: int) -> None:
         self.R1 = (data1 >> 0) & 1
