@@ -4,5 +4,5 @@ motions:
   - file: lafan/lafan.yaml
     weight: 10.0
   - file: optitrack/optitrack.yaml
-    weight: 10.0
+    weight: 30.0
 root_path: assets/motion
