@@ -127,11 +127,6 @@ def main(
         env.eval()
         env.reset()
 
-        link_idx_local = env.get_link_idx_local_by_name("pelvis")
-        base_quat = torch.tensor([0.7071, 0.0, 0.0, 0.7071])
-        env.set_link_pose(link_idx_local, quat=base_quat)
-        env.update_buffers()
-
     else:
         if view:
             raise ValueError("View mode is only supported in simulation mode")
@@ -146,10 +141,9 @@ def main(
             xml_path="assets/robot/unitree_g1/g1_mocap_29dof.xml",
         )
 
-        # print("Press Start button to start the policy")
-        # while not env.robot.Start:
-        #     time.sleep(0.1)
-        input("press ENTER to proceed")
+        print("Press Start button to start the policy")
+        while not env.robot.Start:
+            time.sleep(0.1)
 
     if view and sim:
         print("=" * 80)

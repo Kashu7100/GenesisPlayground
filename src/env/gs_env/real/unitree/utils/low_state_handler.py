@@ -168,7 +168,7 @@ class LowStateMsgHandler:
         self.main_thread = threading.Thread(target=self.main_loop, daemon=True)
 
         # TEMP
-        self._right_wrist_offset = -0.5
+        self._right_wrist_offset = -0.0
 
     def init(self) -> None:
         try:
