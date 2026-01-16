@@ -188,6 +188,7 @@ def main(
                 ref_base_ang_vel_local,
                 ref_dof_pos,
                 ref_dof_vel,
+                ref_link_pos_global,
                 ref_link_pos_local,
                 ref_link_quat_local,
                 ref_link_lin_vel,
@@ -197,6 +198,7 @@ def main(
             ) = motion_lib.get_ref_motion_frame(motion_ids=motion_id_t, motion_times=motion_time_t)
 
             _ = ref_base_ang_vel_local
+            _ = ref_link_pos_global
             _ = ref_link_pos_local
             _ = ref_link_quat_local
             _ = ref_link_lin_vel

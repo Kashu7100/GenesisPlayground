@@ -334,20 +334,53 @@ class BaseAngVelReward(RewardTerm):
         return -base_ang_vel_error
 
 
-class TrackingLinkPosReward(RewardTerm):
+class TrackingLinkPosGlobalReward(RewardTerm):
+    """
+    Reward the tracking link global position.
+
+    Args:
+        tracking_link_pos_global: Tracking link position tensor of shape (B, N, 3) where B is the batch size and N is the number of tracking links.
+        ref_tracking_link_pos_global: Reference tracking link position tensor of shape (B, N, 3) where B is the batch size and N is the number of tracking links.
+        tracking_link_pos_global_weights: Tracking link global position weights tensor of shape (N,) where N is the number of tracking links.
+        deviation_buf: Deviation buffer tensor of shape (B,) where B is the batch size.
+    """
+
+    required_keys = (
+        "tracking_link_pos_global",
+        "ref_tracking_link_pos_global",
+        "tracking_link_pos_global_weights",
+        "deviation_buf",
+    )
+
+    def _compute(
+        self,
+        tracking_link_pos_global: torch.Tensor,
+        ref_tracking_link_pos_global: torch.Tensor,
+        tracking_link_pos_global_weights: torch.Tensor,
+        deviation_buf: torch.Tensor,
+    ) -> torch.Tensor:  # type: ignore
+        tracking_link_pos_error = (
+            torch.square(tracking_link_pos_global - ref_tracking_link_pos_global).sum(dim=-1)
+            * tracking_link_pos_global_weights[None, :]
+        ).sum(dim=-1)
+        return -tracking_link_pos_error * deviation_buf
+
+
+class TrackingLinkPosLocalReward(RewardTerm):
     """
     Reward the tracking link position.
 
     Args:
         tracking_link_pos_local_yaw: Tracking link position tensor of shape (B, N, 3) where B is the batch size and N is the number of tracking links.
         ref_tracking_link_pos_local_yaw: Reference tracking link position tensor of shape (B, N, 3) where B is the batch size and N is the number of tracking links.
-        tracking_link_weights: Tracking link weights tensor of shape (N,) where N is the number of tracking links.
+        tracking_link_pos_local_weights: Tracking link local position weights tensor of shape (N,) where N is the number of tracking links.
+        deviation_buf: Deviation buffer tensor of shape (B,) where B is the batch size.
     """
 
     required_keys = (
         "tracking_link_pos_local_yaw",
         "ref_tracking_link_pos_local_yaw",
-        "tracking_link_weights",
+        "tracking_link_pos_local_weights",
         "deviation_buf",
     )
 
@@ -355,12 +388,12 @@ class TrackingLinkPosReward(RewardTerm):
         self,
         tracking_link_pos_local_yaw: torch.Tensor,
         ref_tracking_link_pos_local_yaw: torch.Tensor,
-        tracking_link_weights: torch.Tensor,
+        tracking_link_pos_local_weights: torch.Tensor,
         deviation_buf: torch.Tensor,
     ) -> torch.Tensor:  # type: ignore
         tracking_link_pos_error = (
             torch.square(tracking_link_pos_local_yaw - ref_tracking_link_pos_local_yaw).sum(dim=-1)
-            * tracking_link_weights[None, :]
+            * tracking_link_pos_local_weights[None, :]
         ).sum(dim=-1)
         return -tracking_link_pos_error * deviation_buf
 
@@ -372,13 +405,13 @@ class TrackingLinkQuatReward(RewardTerm):
     Args:
         tracking_link_quat_local_yaw: Tracking link quaternion tensor of shape (B, N, 4) where B is the batch size and N is the number of tracking links.
         ref_tracking_link_quat_local_yaw: Reference tracking link quaternion tensor of shape (B, N, 4) where B is the batch size and N is the number of tracking links.
-        tracking_link_weights: Tracking link weights tensor of shape (N,) where N is the number of tracking links.
+        tracking_link_quat_weights: Tracking link quaternion weights tensor of shape (N,) where N is the number of tracking links.
     """
 
     required_keys = (
         "tracking_link_quat_local_yaw",
         "ref_tracking_link_quat_local_yaw",
-        "tracking_link_weights",
+        "tracking_link_quat_weights",
         "deviation_buf",
     )
 
@@ -386,14 +419,14 @@ class TrackingLinkQuatReward(RewardTerm):
         self,
         tracking_link_quat_local_yaw: torch.Tensor,
         ref_tracking_link_quat_local_yaw: torch.Tensor,
-        tracking_link_weights: torch.Tensor,
+        tracking_link_quat_weights: torch.Tensor,
         deviation_buf: torch.Tensor,
     ) -> torch.Tensor:  # type: ignore
         tracking_link_quat_error = (
             quat_to_angle_axis(
                 quat_diff(tracking_link_quat_local_yaw, ref_tracking_link_quat_local_yaw)
             ).norm(dim=-1)
-            * tracking_link_weights[None, :]
+            * tracking_link_quat_weights[None, :]
         ).sum(dim=-1)
         return -tracking_link_quat_error * deviation_buf
 

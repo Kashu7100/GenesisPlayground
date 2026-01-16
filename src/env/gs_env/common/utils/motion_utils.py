@@ -404,6 +404,7 @@ class MotionLib:
         torch.Tensor,
         torch.Tensor,
         torch.Tensor,
+        torch.Tensor,
     ]:
         assert motion_times.min() >= 0.0, "motion_times must be non-negative"
         # snap to discrete frame grid using unified fps and clamp within motion length
@@ -422,6 +423,7 @@ class MotionLib:
         base_ang_vel_local = self._motion_base_ang_vel_local[frame_idx]
         dof_pos = self._motion_dof_pos[frame_idx]
         dof_vel = self._motion_dof_vel[frame_idx]
+        link_pos_global = self._motion_link_pos_global[frame_idx]
         link_pos_local = self._motion_link_pos_local[frame_idx]
         link_quat_local = self._motion_link_quat_local[frame_idx]
         link_lin_vel = self._motion_link_lin_vel[frame_idx]
@@ -437,6 +439,7 @@ class MotionLib:
             base_ang_vel_local,
             dof_pos,
             dof_vel,
+            link_pos_global,
             link_pos_local,
             link_quat_local,
             link_lin_vel,
