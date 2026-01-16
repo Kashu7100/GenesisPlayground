@@ -1,4 +1,4 @@
-track_id_offset = 0  # Set if unmatched skeleton ID
+track_id_offset = 65536  # Set if unmatched skeleton ID
 
 RIGID_BODY_ID_MAP = {
     # Real to Sim Rigid

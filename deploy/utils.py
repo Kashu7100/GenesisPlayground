@@ -458,7 +458,7 @@ class G1Retargeter:
         self.g1_pelvis_shoulder_z = 1.082 - 0.793
         self.g1_pelvis_torso_z = 0.837 - 0.793
         self.g1_pelvis_z = 0.793 * 0.95
-        self.g1_leg_length = self.g1_pelvis_z - (0.793 - 0.7393)  # foot height
+        self.g1_leg_length = self.g1_pelvis_z - (0.793 - 0.7393) + 0.02  # foot height
         self.g1_shoulder_anchor = torch.tensor(
             [
                 [0.0, self.g1_shoulder_y, self.g1_pelvis_shoulder_z],
